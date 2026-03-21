@@ -1,5 +1,3 @@
-#!/usr/bin/env node
-
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
@@ -19,7 +17,7 @@ async function paperlessFetch(path: string, options: RequestInit = {}): Promise<
     ...options,
     headers: {
       Authorization: `Token ${PAPERLESS_TOKEN}`,
-      ...(!options.body || typeof options.body === "string" ? { "Content-Type": "application/json" } : {}),
+      ...(options.body && typeof options.body === "string" ? { "Content-Type": "application/json" } : {}),
       ...options.headers,
     },
   });
@@ -36,7 +34,7 @@ function buildQS(params: Record<string, unknown>): string {
   for (const [k, v] of Object.entries(params)) {
     if (v !== undefined && v !== null) {
       if (Array.isArray(v)) {
-        sp.set(k, v.join(","));
+        v.forEach(item => sp.append(k, String(item)));
       } else {
         sp.set(k, String(v));
       }
@@ -80,11 +78,10 @@ server.tool(
   "Full-text search across all documents",
   {
     query: z.string().describe("Search query"),
-    page: z.number().optional(),
-    page_size: z.number().optional(),
+    db_only: z.boolean().optional().describe("Search database only, skip full-text index"),
   },
-  async ({ query, page, page_size }) => {
-    try { return ok(await paperlessFetch(`/api/search/${buildQS({ query, page, page_size })}`)); }
+  async ({ query, db_only }) => {
+    try { return ok(await paperlessFetch(`/api/search/${buildQS({ query, db_only })}`)); }
     catch (e) { return err(e); }
   },
 );
@@ -159,7 +156,7 @@ server.tool(
         return ok({ content_type: ct, content: await res.text() });
       }
       const buf = await res.arrayBuffer();
-      return ok({ content_type: ct, size: buf.byteLength, base64: Buffer.from(buf).toString("base64").slice(0, 1000) + "..." });
+      return ok({ content_type: ct, size: buf.byteLength, note: "Binary file, content not shown. Use the Paperless web UI to view this document." });
     } catch (e) { return err(e); }
   },
 );
@@ -217,12 +214,12 @@ server.tool(
       const filename = file_path.split("/").pop() || "document";
       const form = new FormData();
       form.append("document", new Blob([fileData]), filename);
-      if (title) form.append("title", title);
-      if (correspondent) form.append("correspondent", String(correspondent));
-      if (document_type) form.append("document_type", String(document_type));
-      if (storage_path) form.append("storage_path", String(storage_path));
-      if (archive_serial_number) form.append("archive_serial_number", String(archive_serial_number));
-      if (created) form.append("created", created);
+      if (title !== undefined) form.append("title", title);
+      if (correspondent !== undefined) form.append("correspondent", String(correspondent));
+      if (document_type !== undefined) form.append("document_type", String(document_type));
+      if (storage_path !== undefined) form.append("storage_path", String(storage_path));
+      if (archive_serial_number !== undefined) form.append("archive_serial_number", String(archive_serial_number));
+      if (created !== undefined) form.append("created", created);
       if (tags) tags.forEach(t => form.append("tags", String(t)));
 
       const res = await fetch(`${PAPERLESS_URL}/api/documents/post_document/`, {
