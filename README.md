@@ -1,6 +1,6 @@
 # paperless-mcp
 
-MCP server for [Paperless-ngx](https://docs.paperless-ngx.com/) that exposes the REST API as tools for AI agents.
+MCP server for [Paperless-ngx](https://docs.paperless-ngx.com/) that exposes the REST API as tools for AI agents. Includes semantic search via local vector embeddings.
 
 ## Setup
 
@@ -29,7 +29,9 @@ claude mcp add paperless -- node /path/to/paperless-mcp/dist/index.js
       "args": ["/path/to/paperless-mcp/dist/index.js"],
       "env": {
         "PAPERLESS_URL": "https://your-paperless-instance.example.com",
-        "PAPERLESS_TOKEN": "your-api-token"
+        "PAPERLESS_TOKEN": "your-api-token",
+        "EMBEDDING_PROVIDER": "openai",
+        "OPENAI_API_KEY": "sk-..."
       }
     }
   }
@@ -38,7 +40,11 @@ claude mcp add paperless -- node /path/to/paperless-mcp/dist/index.js
 
 4. Restart Claude Code. The tools will be available immediately.
 
+5. Run `sync_embeddings` to index your documents for semantic search.
+
 ## Available Tools
+
+### Core API Tools
 
 | Category | Tools |
 |----------|-------|
@@ -54,9 +60,24 @@ claude mcp add paperless -- node /path/to/paperless-mcp/dist/index.js
 | Custom fields | `list_custom_fields` |
 | System | `get_status`, `get_statistics`, `list_tasks` |
 
+### Extended Tools
+
+| Category | Tools | Description |
+|----------|-------|-------------|
+| Semantic search | `semantic_search`, `sync_embeddings`, `embedding_status` | Vector similarity search using local sqlite-vec database |
+| Content | `get_document_content` | Extract OCR'd text content from documents |
+| Workflows | `auto_classify_document`, `process_inbox`, `bulk_tag_by_content` | AI-assisted classification and bulk operations |
+| Helpers | `get_documents_by_correspondent`, `monthly_summary`, `upload_from_url` | Convenience tools for common workflows |
+
 ## Environment Variables
 
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `PAPERLESS_URL` | Yes | Base URL of your Paperless-ngx instance |
 | `PAPERLESS_TOKEN` | Yes | API authentication token |
+| `EMBEDDING_PROVIDER` | No | `openai` (default) or `ollama` |
+| `EMBEDDING_MODEL` | No | Model name (default: `text-embedding-3-small` for OpenAI, `nomic-embed-text` for Ollama) |
+| `EMBEDDING_DIMENSIONS` | No | Embedding dimensions (default: `1536`) |
+| `OPENAI_API_KEY` | If using OpenAI | OpenAI API key for embeddings |
+| `OLLAMA_URL` | If using Ollama | Ollama server URL (default: `http://localhost:11434`) |
+| `PAPERLESS_MCP_DATA` | No | Path to store vector database (default: `~/.paperless-mcp/`) |
