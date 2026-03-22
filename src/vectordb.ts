@@ -64,12 +64,12 @@ export function upsertDocument(id: number, title: string, contentHash: string, e
       d.prepare("UPDATE documents SET title = ?, content_hash = ?, updated_at = ? WHERE id = ?")
         .run(title, contentHash, new Date().toISOString(), id);
       d.prepare("UPDATE vec_documents SET embedding = ? WHERE rowid = ?")
-        .run(embBuf, id);
+        .run(embBuf, BigInt(id));
     } else {
       d.prepare("INSERT INTO documents (id, title, content_hash, updated_at) VALUES (?, ?, ?, ?)")
         .run(id, title, contentHash, new Date().toISOString());
       d.prepare("INSERT INTO vec_documents (rowid, embedding) VALUES (?, ?)")
-        .run(id, embBuf);
+        .run(BigInt(id), embBuf);
     }
   });
   tx();
@@ -79,7 +79,7 @@ export function removeDocument(id: number) {
   const d = getDb();
   const tx = d.transaction(() => {
     d.prepare("DELETE FROM documents WHERE id = ?").run(id);
-    d.prepare("DELETE FROM vec_documents WHERE rowid = ?").run(id);
+    d.prepare("DELETE FROM vec_documents WHERE rowid = ?").run(BigInt(id));
   });
   tx();
 }
@@ -96,9 +96,8 @@ export function searchSimilar(embedding: number[], limit: number = 10): SearchRe
     SELECT v.rowid as id, d.title, v.distance
     FROM vec_documents v
     JOIN documents d ON d.id = v.rowid
-    WHERE v.embedding MATCH ?
+    WHERE v.embedding MATCH ? AND k = ?
     ORDER BY v.distance
-    LIMIT ?
   `).all(Buffer.from(new Float32Array(embedding).buffer), limit) as SearchResult[];
   return rows;
 }
