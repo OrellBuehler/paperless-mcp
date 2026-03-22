@@ -69,14 +69,6 @@ export async function fetchAllPages<T = unknown>(path: string): Promise<T[]> {
 }
 
 export async function getDocumentContent(id: number): Promise<string> {
-  const url = `${PAPERLESS_URL}/api/documents/${id}/download/`;
-  const res = await fetch(url, {
-    headers: { Authorization: `Token ${PAPERLESS_TOKEN}` },
-  });
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
-  const ct = res.headers.get("content-type") || "";
-  if (ct.includes("text") || ct.includes("json") || ct.includes("xml")) {
-    return res.text();
-  }
-  return "";
+  const doc = await paperlessFetch(`/api/documents/${id}/`) as { content?: string };
+  return doc.content || "";
 }

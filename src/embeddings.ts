@@ -41,21 +41,17 @@ async function embedOpenAI(texts: string[]): Promise<number[][]> {
 }
 
 async function embedOllama(texts: string[]): Promise<number[][]> {
-  const results: number[][] = [];
-  for (const text of texts) {
-    const res = await fetch(`${OLLAMA_URL}/api/embed`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ model: EMBEDDING_MODEL, input: text }),
-    });
-    if (!res.ok) {
-      const body = await res.text();
-      throw new Error(`Ollama embedding error: ${res.status} ${body}`);
-    }
-    const data = await res.json() as { embeddings: number[][] };
-    results.push(data.embeddings[0]);
+  const res = await fetch(`${OLLAMA_URL}/api/embed`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ model: EMBEDDING_MODEL, input: texts }),
+  });
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Ollama embedding error: ${res.status} ${body}`);
   }
-  return results;
+  const data = await res.json() as { embeddings: number[][] };
+  return data.embeddings;
 }
 
 export async function embed(texts: string[]): Promise<number[][]> {

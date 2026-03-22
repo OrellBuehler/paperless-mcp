@@ -1,6 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { paperlessFetch, buildQS, getDocumentContent, ok, err, PAPERLESS_URL, PAPERLESS_TOKEN, PaginatedResponse } from "../paperless.js";
+import { paperlessFetch, fetchAllPages, buildQS, getDocumentContent, ok, err, PAPERLESS_URL, PAPERLESS_TOKEN, PaginatedResponse } from "../paperless.js";
 
 interface Correspondent {
   id: number;
@@ -89,16 +89,15 @@ export function registerHelperTools(server: McpServer) {
         const endYear = month === 12 ? year + 1 : year;
         const endDate = `${endYear}-${String(endMonth).padStart(2, "0")}-01`;
 
-        const docs = await paperlessFetch(`/api/documents/${buildQS({
+        const allDocs = await fetchAllPages<Document>(`/api/documents/${buildQS({
           added__date__gte: startDate,
           added__date__lt: endDate,
-          page_size: 100,
           ordering: "-added",
-        })}`) as PaginatedResponse<Document>;
+        })}`);
 
         const byType: Record<string, number> = {};
         const byCorrespondent: Record<string, number> = {};
-        for (const doc of docs.results) {
+        for (const doc of allDocs) {
           const typeKey = doc.document_type ? String(doc.document_type) : "unclassified";
           byType[typeKey] = (byType[typeKey] || 0) + 1;
           const corrKey = doc.correspondent ? String(doc.correspondent) : "unknown";
@@ -107,11 +106,10 @@ export function registerHelperTools(server: McpServer) {
 
         return ok({
           period: `${year}-${String(month).padStart(2, "0")}`,
-          total_added: docs.count,
-          shown: docs.results.length,
+          total_added: allDocs.length,
           by_document_type_id: byType,
           by_correspondent_id: byCorrespondent,
-          documents: docs.results.map(d => ({
+          documents: allDocs.map(d => ({
             id: d.id,
             title: d.title,
             created: d.created,
@@ -141,8 +139,13 @@ export function registerHelperTools(server: McpServer) {
         if (!["http:", "https:"].includes(parsed.protocol)) {
           throw new Error(`Unsupported URL scheme: ${parsed.protocol}. Only http and https are allowed.`);
         }
-        const fileRes = await fetch(url);
+        const MAX_DOWNLOAD_SIZE = 100 * 1024 * 1024; // 100 MB
+        const fileRes = await fetch(url, { redirect: "error" });
         if (!fileRes.ok) throw new Error(`Failed to download: ${fileRes.status} ${fileRes.statusText}`);
+        const contentLength = parseInt(fileRes.headers.get("content-length") || "0", 10);
+        if (contentLength > MAX_DOWNLOAD_SIZE) {
+          throw new Error(`File too large: ${contentLength} bytes (max ${MAX_DOWNLOAD_SIZE})`);
+        }
 
         const contentDisposition = fileRes.headers.get("content-disposition");
         let filename = url.split("/").pop()?.split("?")[0] || "document";
