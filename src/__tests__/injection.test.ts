@@ -4,6 +4,7 @@ vi.stubEnv("PAPERLESS_URL", "https://p.example.com");
 vi.stubEnv("PAPERLESS_TOKEN", "admin-tok");
 
 const { registerCoreTools } = await import("../tools/core.js");
+const { registerHelperTools } = await import("../tools/helpers.js");
 const { PaperlessClient } = await import("../paperless/client.js");
 
 type H = (a: any) => Promise<{ content: { text: string }[]; isError?: boolean }>;
@@ -31,5 +32,37 @@ describe("core tools use the injected client", () => {
     const res = await t.get("download_document")!({ id: 5 });
     expect(path).toBe("/api/documents/5/download/");
     expect(res.content[0].text).toContain("hi");
+  });
+});
+
+describe("helper tools use the injected client", () => {
+  it("get_documents calls client.fetch per id", async () => {
+    const c = new PaperlessClient("https://p.example.com", "user-tok");
+    const calls: string[] = [];
+    (c as any).fetch = async (p: string) => { calls.push(p); return { id: Number(p.split("/")[3]), content: "x" }; };
+    const t = collect(registerHelperTools, c);
+    await t.get("get_documents")!({ ids: [1, 2] });
+    expect(calls).toEqual(["/api/documents/1/", "/api/documents/2/"]);
+  });
+
+  it("upload_from_url calls client.upload", async () => {
+    const c = new PaperlessClient("https://p.example.com", "user-tok");
+    let uploaded = false;
+    (c as any).upload = async () => { uploaded = true; return { ok: true, json: async () => ({ task: "t" }), headers: new Map() }; };
+    const realFetch = global.fetch;
+    global.fetch = (async () => ({
+      ok: true,
+      status: 200,
+      headers: new Map([["content-length", "10"]]),
+      blob: async () => new Blob(["data"]),
+    })) as unknown as typeof fetch;
+    try {
+      const t = collect(registerHelperTools, c);
+      const res = await t.get("upload_from_url")!({ url: "https://example.com/file.pdf" });
+      expect(uploaded).toBe(true);
+      expect(res.isError).toBeFalsy();
+    } finally {
+      global.fetch = realFetch;
+    }
   });
 });

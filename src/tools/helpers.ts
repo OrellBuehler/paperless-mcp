@@ -1,6 +1,9 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { paperlessFetch, fetchAllPages, buildQS, getDocumentContent, ok, err, PAPERLESS_URL, PAPERLESS_TOKEN, PaginatedResponse } from "../paperless.js";
+import { buildQS, ok, err } from "../paperless/format.js";
+import type { PaginatedResponse } from "../paperless/format.js";
+import type { PaperlessClient } from "../paperless/client.js";
+import { adminClient } from "../config.js";
 
 interface Correspondent {
   id: number;
@@ -19,7 +22,7 @@ interface Document {
   archive_serial_number: number | null;
 }
 
-export function registerHelperTools(server: McpServer) {
+export function registerHelperTools(server: McpServer, client: PaperlessClient = adminClient) {
   server.tool(
     "get_document_content",
     "Get the text content of a document (OCR'd text for PDFs, raw text for text files)",
@@ -29,9 +32,9 @@ export function registerHelperTools(server: McpServer) {
     },
     async ({ id, max_length }) => {
       try {
-        let content = await getDocumentContent(id);
+        let content = await client.getDocumentContent(id);
         if (!content) {
-          const doc = await paperlessFetch(`/api/documents/${id}/`) as { content: string };
+          const doc = await client.fetch(`/api/documents/${id}/`) as { content: string };
           content = doc.content || "";
         }
         if (!content) return ok({ id, content: "", note: "No text content available for this document" });
@@ -53,7 +56,7 @@ export function registerHelperTools(server: McpServer) {
     async ({ ids, max_content_length }) => {
       try {
         const docs = await Promise.all(
-          ids.map((id) => paperlessFetch(`/api/documents/${id}/`) as Promise<Record<string, unknown>>),
+          ids.map((id) => client.fetch(`/api/documents/${id}/`) as Promise<Record<string, unknown>>),
         );
         const result = docs.map((doc) => {
           if (max_content_length && typeof doc.content === "string" && doc.content.length > max_content_length) {
@@ -81,13 +84,13 @@ export function registerHelperTools(server: McpServer) {
     },
     async ({ name, page, page_size }) => {
       try {
-        const corrs = await paperlessFetch(`/api/correspondents/${buildQS({ name__icontains: name })}`) as PaginatedResponse<Correspondent>;
+        const corrs = await client.fetch(`/api/correspondents/${buildQS({ name__icontains: name })}`) as PaginatedResponse<Correspondent>;
         if (corrs.results.length === 0) {
           return ok({ query: name, message: "No correspondents found matching that name" });
         }
 
         const correspondent = corrs.results[0];
-        const docs = await paperlessFetch(`/api/documents/${buildQS({
+        const docs = await client.fetch(`/api/documents/${buildQS({
           correspondent__id: correspondent.id,
           page: page || 1,
           page_size: page_size || 25,
@@ -117,7 +120,7 @@ export function registerHelperTools(server: McpServer) {
         const endYear = month === 12 ? year + 1 : year;
         const endDate = `${endYear}-${String(endMonth).padStart(2, "0")}-01`;
 
-        const allDocs = await fetchAllPages<Document>(`/api/documents/${buildQS({
+        const allDocs = await client.fetchAllPages<Document>(`/api/documents/${buildQS({
           added__date__gte: startDate,
           added__date__lt: endDate,
           ordering: "-added",
@@ -191,11 +194,7 @@ export function registerHelperTools(server: McpServer) {
         if (storage_path !== undefined) form.append("storage_path", String(storage_path));
         if (tags) tags.forEach(t => form.append("tags", String(t)));
 
-        const res = await fetch(`${PAPERLESS_URL}/api/documents/post_document/`, {
-          method: "POST",
-          headers: { Authorization: `Token ${PAPERLESS_TOKEN}` },
-          body: form,
-        });
+        const res = await client.upload("/api/documents/post_document/", form);
         if (!res.ok) throw new Error(`Upload failed: ${res.status}: ${await res.text()}`);
 
         return ok(await res.json().catch(() => ({
