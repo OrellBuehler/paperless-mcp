@@ -17,7 +17,7 @@ function contentHash(text: string): string {
   return createHash("sha256").update(text).digest("hex").slice(0, 16);
 }
 
-export function registerSearchTools(server: McpServer, client: PaperlessClient = adminClient) {
+export function registerSearchTools(server: McpServer, client: PaperlessClient) {
   server.tool(
     "semantic_search",
     "Search documents by meaning using vector embeddings. Requires sync_embeddings to be run first.",

@@ -3,7 +3,6 @@ import { z } from "zod";
 import { buildQS, ok, err } from "../paperless/format.js";
 import type { PaginatedResponse } from "../paperless/format.js";
 import type { PaperlessClient } from "../paperless/client.js";
-import { adminClient } from "../config.js";
 
 interface Correspondent {
   id: number;
@@ -22,7 +21,7 @@ interface Document {
   archive_serial_number: number | null;
 }
 
-export function registerHelperTools(server: McpServer, client: PaperlessClient = adminClient) {
+export function registerHelperTools(server: McpServer, client: PaperlessClient) {
   server.tool(
     "get_document_content",
     "Get the text content of a document (OCR'd text for PDFs, raw text for text files)",

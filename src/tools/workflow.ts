@@ -3,7 +3,6 @@ import { z } from "zod";
 import { buildQS, ok, err } from "../paperless/format.js";
 import type { PaginatedResponse } from "../paperless/format.js";
 import type { PaperlessClient } from "../paperless/client.js";
-import { adminClient } from "../config.js";
 
 interface Suggestion {
   correspondents: number[];
@@ -24,7 +23,7 @@ interface Document {
   created: string;
 }
 
-export function registerWorkflowTools(server: McpServer, client: PaperlessClient = adminClient) {
+export function registerWorkflowTools(server: McpServer, client: PaperlessClient) {
   server.tool(
     "auto_classify_document",
     "Get AI suggestions for a document and apply them in one step. Returns what was changed.",

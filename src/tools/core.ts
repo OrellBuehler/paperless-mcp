@@ -3,9 +3,8 @@ import { z } from "zod";
 import { readFile } from "node:fs/promises";
 import { buildQS, ok, err, summarizeDocs } from "../paperless/format.js";
 import type { PaperlessClient } from "../paperless/client.js";
-import { adminClient } from "../config.js";
 
-export function registerCoreTools(server: McpServer, client: PaperlessClient = adminClient) {
+export function registerCoreTools(server: McpServer, client: PaperlessClient) {
   // --- System ---
 
   server.tool("get_status", "Get Paperless-ngx server status", {}, async () => {
