@@ -41,7 +41,8 @@ export function startHttpServer(): void {
     const url = new URL(req.url || "/", `http://localhost:${config.port}`);
     if (url.pathname !== "/mcp") { res.writeHead(404).end(); return; }
 
-    const sessionId = req.headers["mcp-session-id"] as string | undefined;
+    const rawSessionId = req.headers["mcp-session-id"];
+    const sessionId = Array.isArray(rawSessionId) ? rawSessionId[0] : rawSessionId;
 
     try {
       if (sessionId) {
