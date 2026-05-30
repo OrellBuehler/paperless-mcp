@@ -98,10 +98,74 @@ claude mcp add paperless --scope user \
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `PAPERLESS_URL` | Yes | Base URL of your Paperless-ngx instance |
-| `PAPERLESS_TOKEN` | Yes | API authentication token |
-| `EMBEDDING_PROVIDER` | No | `openai` (default) or `ollama` |
-| `EMBEDDING_MODEL` | No | Model name (default: `text-embedding-3-small` for OpenAI, `nomic-embed-text` for Ollama) |
-| `EMBEDDING_DIMENSIONS` | No | Embedding dimensions (default: `1536`) |
-| `OPENAI_API_KEY` | If using OpenAI | OpenAI API key for embeddings |
+| `PAPERLESS_TOKEN` | Yes | API token. In `stdio` mode this is the user's token; in `http` mode it is the admin/indexer token (builds the shared embedding index and gates `sync_embeddings`) |
+| `MCP_TRANSPORT` | No | `stdio` (default) or `http` |
+| `PORT` | No | Port for the HTTP server (default: `3001`, http mode only) |
+| `EMBEDDINGS_ENABLED` | No | Set to `true` to enable semantic search tools (default: off) |
+| `EMBEDDING_PROVIDER` | No | `openai` or `ollama` (default: `openai`) |
+| `OPENAI_API_KEY` | If using OpenAI | Required for OpenAI embeddings |
 | `OLLAMA_URL` | If using Ollama | Ollama server URL (default: `http://localhost:11434`) |
-| `PAPERLESS_MCP_DATA` | No | Path to store vector database (default: `~/.paperless-mcp/`) |
+| `EMBEDDING_MODEL` | No | Model name (defaults per provider) |
+| `EMBEDDING_DIMENSIONS` | No | Vector dimensions (defaults per provider) |
+| `PAPERLESS_MCP_DATA` | No | Directory for the vector DB (default: `~/.paperless-mcp`) |
+
+## Transports
+
+The server supports two transports, selected by `MCP_TRANSPORT`.
+
+### stdio (default)
+
+Single-user. The MCP client launches the server as a subprocess and it uses
+`PAPERLESS_TOKEN` for all requests. This is the configuration shown above.
+
+### HTTP (multi-user)
+
+Run the server as a shared HTTP service (e.g. a sidecar next to your Paperless-ngx
+deployment) so other users on your network can connect:
+
+```bash
+MCP_TRANSPORT=http PORT=3001 \
+  PAPERLESS_URL=https://paperless.example.com \
+  PAPERLESS_TOKEN=<admin-token> \
+  node dist/index.js
+```
+
+Clients connect to `http://<host>:3001/mcp` and authenticate with **their own**
+Paperless API token via an `Authorization: Bearer <token>` header (or
+`X-Paperless-Token`). Every Paperless call is made with that token, so each user
+only sees the documents their account permits.
+
+`PAPERLESS_TOKEN` is the admin/indexer token: it builds the shared semantic-search
+index, and the `sync_embeddings` tool is only available to a session using the
+admin token. `semantic_search` results are filtered through the requesting user's
+token, so users never see documents they cannot access.
+
+## Run as an HTTP sidecar (Docker Compose)
+
+A `Dockerfile` is included. Add the server as a service next to your existing
+Paperless-ngx compose stack:
+
+```yaml
+  paperless-mcp:
+    build: https://github.com/<you>/paperless-mcp.git
+    restart: unless-stopped
+    depends_on:
+      - webserver
+    ports:
+      - 3001:3001
+    volumes:
+      - /mnt/ssd/paperless_ngx/mcp:/data
+    environment:
+      MCP_TRANSPORT: http
+      PORT: 3001
+      PAPERLESS_URL: http://webserver:8000
+      PAPERLESS_TOKEN: <admin-token>
+      PAPERLESS_MCP_DATA: /data
+      EMBEDDINGS_ENABLED: "true"
+      EMBEDDING_PROVIDER: openai
+      OPENAI_API_KEY: <key>
+```
+
+LAN clients connect to `http://<host>:3001/mcp` with their own Paperless API
+token. Run `sync_embeddings` once with the admin token to build the shared
+semantic index.
