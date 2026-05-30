@@ -1,6 +1,9 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { paperlessFetch, fetchAllPages, buildQS, ok, err, PaginatedResponse } from "../paperless.js";
+import { buildQS, ok, err } from "../paperless/format.js";
+import type { PaginatedResponse } from "../paperless/format.js";
+import type { PaperlessClient } from "../paperless/client.js";
+import { adminClient } from "../config.js";
 
 interface Suggestion {
   correspondents: number[];
@@ -21,7 +24,7 @@ interface Document {
   created: string;
 }
 
-export function registerWorkflowTools(server: McpServer) {
+export function registerWorkflowTools(server: McpServer, client: PaperlessClient = adminClient) {
   server.tool(
     "auto_classify_document",
     "Get AI suggestions for a document and apply them in one step. Returns what was changed.",
@@ -35,8 +38,8 @@ export function registerWorkflowTools(server: McpServer) {
     async ({ id, apply_correspondent, apply_document_type, apply_tags, apply_storage_path }) => {
       try {
         const [suggestions, doc] = await Promise.all([
-          paperlessFetch(`/api/documents/${id}/suggestions/`) as Promise<Suggestion>,
-          paperlessFetch(`/api/documents/${id}/`) as Promise<Document>,
+          client.fetch(`/api/documents/${id}/suggestions/`) as Promise<Suggestion>,
+          client.fetch(`/api/documents/${id}/`) as Promise<Document>,
         ]);
         const updates: Record<string, unknown> = {};
 
@@ -58,7 +61,7 @@ export function registerWorkflowTools(server: McpServer) {
           return ok({ id, message: "No suggestions available", suggestions });
         }
 
-        const updated = await paperlessFetch(`/api/documents/${id}/`, {
+        const updated = await client.fetch(`/api/documents/${id}/`, {
           method: "PATCH",
           body: JSON.stringify(updates),
         });
@@ -77,12 +80,12 @@ export function registerWorkflowTools(server: McpServer) {
     async ({ limit }) => {
       try {
         const maxDocs = limit || 20;
-        const data = await paperlessFetch(`/api/documents/${buildQS({ is_in_inbox: true, page_size: maxDocs })}`) as PaginatedResponse<Document>;
+        const data = await client.fetch(`/api/documents/${buildQS({ is_in_inbox: true, page_size: maxDocs })}`) as PaginatedResponse<Document>;
         const proposals: unknown[] = [];
 
         for (const doc of data.results) {
           try {
-            const suggestions = await paperlessFetch(`/api/documents/${doc.id}/suggestions/`) as Suggestion;
+            const suggestions = await client.fetch(`/api/documents/${doc.id}/suggestions/`) as Suggestion;
             proposals.push({
               id: doc.id,
               title: doc.title,
@@ -124,7 +127,7 @@ export function registerWorkflowTools(server: McpServer) {
     },
     async ({ query, tag_id, dry_run }) => {
       try {
-        const data = await paperlessFetch(`/api/documents/${buildQS({ query, page_size: 100 })}`) as PaginatedResponse<Document>;
+        const data = await client.fetch(`/api/documents/${buildQS({ query, page_size: 100 })}`) as PaginatedResponse<Document>;
         const docIds = data.results.map(d => d.id);
 
         if (dry_run) {
@@ -142,7 +145,7 @@ export function registerWorkflowTools(server: McpServer) {
           return ok({ query, tag_id, message: "No documents matched the query" });
         }
 
-        const result = await paperlessFetch("/api/documents/bulk_edit/", {
+        const result = await client.fetch("/api/documents/bulk_edit/", {
           method: "POST",
           body: JSON.stringify({
             documents: docIds,

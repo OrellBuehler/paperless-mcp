@@ -5,6 +5,7 @@ vi.stubEnv("PAPERLESS_TOKEN", "admin-tok");
 
 const { registerCoreTools } = await import("../tools/core.js");
 const { registerHelperTools } = await import("../tools/helpers.js");
+const { registerWorkflowTools } = await import("../tools/workflow.js");
 const { PaperlessClient } = await import("../paperless/client.js");
 
 type H = (a: any) => Promise<{ content: { text: string }[]; isError?: boolean }>;
@@ -64,5 +65,17 @@ describe("helper tools use the injected client", () => {
     } finally {
       global.fetch = realFetch;
     }
+  });
+});
+
+describe("workflow tools use the injected client", () => {
+  it("process_inbox queries documents via client.fetch", async () => {
+    const c = new PaperlessClient("https://p.example.com", "user-tok");
+    const calls: string[] = [];
+    (c as any).fetch = async (p: string) => { calls.push(p); return { count: 0, results: [] }; };
+    const t = collect(registerWorkflowTools, c);
+    await t.get("process_inbox")!({});
+    expect(calls[0]).toContain("/api/documents/");
+    expect(calls[0]).toContain("is_in_inbox=true");
   });
 });
