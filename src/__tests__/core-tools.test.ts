@@ -5,6 +5,7 @@ vi.stubEnv("PAPERLESS_TOKEN", "test-token-123");
 
 const { registerCoreTools } = await import("../tools/core.js");
 const { registerHelperTools } = await import("../tools/helpers.js");
+const { PaperlessClient } = await import("../paperless/client.js");
 
 type ToolHandler = (args: any) => Promise<{ content: { text: string }[]; isError?: boolean }>;
 
@@ -15,8 +16,9 @@ function collectTools() {
       tools.set(name, handler);
     },
   };
-  registerCoreTools(server as any);
-  registerHelperTools(server as any);
+  const client = new PaperlessClient("http://localhost:8000", "test-token-123");
+  registerCoreTools(server as any, client);
+  registerHelperTools(server as any, client);
   return tools;
 }
 

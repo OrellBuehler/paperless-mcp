@@ -1,23 +1,24 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { readFile } from "node:fs/promises";
-import { paperlessFetch, buildQS, ok, err, summarizeDocs, PAPERLESS_URL, PAPERLESS_TOKEN } from "../paperless.js";
+import { buildQS, ok, err, summarizeDocs } from "../paperless/format.js";
+import type { PaperlessClient } from "../paperless/client.js";
 
-export function registerCoreTools(server: McpServer) {
+export function registerCoreTools(server: McpServer, client: PaperlessClient) {
   // --- System ---
 
   server.tool("get_status", "Get Paperless-ngx server status", {}, async () => {
-    try { return ok(await paperlessFetch("/api/status/")); }
+    try { return ok(await client.fetch("/api/status/")); }
     catch (e) { return err(e); }
   });
 
   server.tool("get_statistics", "Get document statistics (total count, inbox count, etc.)", {}, async () => {
-    try { return ok(await paperlessFetch("/api/statistics/")); }
+    try { return ok(await client.fetch("/api/statistics/")); }
     catch (e) { return err(e); }
   });
 
   server.tool("list_tasks", "List background tasks (consumption, etc.)", {}, async () => {
-    try { return ok(await paperlessFetch("/api/tasks/")); }
+    try { return ok(await client.fetch("/api/tasks/")); }
     catch (e) { return err(e); }
   });
 
@@ -31,7 +32,7 @@ export function registerCoreTools(server: McpServer) {
       db_only: z.boolean().optional().describe("Search database only, skip full-text index"),
     },
     async ({ query, db_only }) => {
-      try { return ok(summarizeDocs(await paperlessFetch(`/api/search/${buildQS({ query, db_only })}`))); }
+      try { return ok(summarizeDocs(await client.fetch(`/api/search/${buildQS({ query, db_only })}`))); }
       catch (e) { return err(e); }
     },
   );
@@ -44,7 +45,7 @@ export function registerCoreTools(server: McpServer) {
       limit: z.number().optional(),
     },
     async ({ term, limit }) => {
-      try { return ok(await paperlessFetch(`/api/search/autocomplete/${buildQS({ term, limit })}`)); }
+      try { return ok(await client.fetch(`/api/search/autocomplete/${buildQS({ term, limit })}`)); }
       catch (e) { return err(e); }
     },
   );
@@ -72,7 +73,7 @@ export function registerCoreTools(server: McpServer) {
       ordering: z.string().optional().describe("Field to order by, prefix with - for descending"),
     },
     async (params) => {
-      try { return ok(summarizeDocs(await paperlessFetch(`/api/documents/${buildQS(params)}`))); }
+      try { return ok(summarizeDocs(await client.fetch(`/api/documents/${buildQS(params)}`))); }
       catch (e) { return err(e); }
     },
   );
@@ -82,7 +83,7 @@ export function registerCoreTools(server: McpServer) {
     "Get a single document by ID, including its full OCR text content",
     { id: z.number().describe("Document ID") },
     async ({ id }) => {
-      try { return ok(await paperlessFetch(`/api/documents/${id}/`)); }
+      try { return ok(await client.fetch(`/api/documents/${id}/`)); }
       catch (e) { return err(e); }
     },
   );
@@ -96,10 +97,7 @@ export function registerCoreTools(server: McpServer) {
     },
     async ({ id, original }) => {
       try {
-        const url = `${PAPERLESS_URL}/api/documents/${id}/download/${buildQS({ original })}`;
-        const res = await fetch(url, {
-          headers: { Authorization: `Token ${PAPERLESS_TOKEN}` },
-        });
+        const res = await client.download(`/api/documents/${id}/download/${buildQS({ original })}`);
         if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
         const ct = res.headers.get("content-type") || "";
         if (ct.includes("text") || ct.includes("json") || ct.includes("xml")) {
@@ -127,7 +125,7 @@ export function registerCoreTools(server: McpServer) {
     },
     async ({ id, ...body }) => {
       try {
-        return ok(await paperlessFetch(`/api/documents/${id}/`, {
+        return ok(await client.fetch(`/api/documents/${id}/`, {
           method: "PATCH",
           body: JSON.stringify(body),
         }));
@@ -140,7 +138,7 @@ export function registerCoreTools(server: McpServer) {
     "Delete a document",
     { id: z.number().describe("Document ID") },
     async ({ id }) => {
-      try { return ok(await paperlessFetch(`/api/documents/${id}/`, { method: "DELETE" })); }
+      try { return ok(await client.fetch(`/api/documents/${id}/`, { method: "DELETE" })); }
       catch (e) { return err(e); }
     },
   );
@@ -172,11 +170,7 @@ export function registerCoreTools(server: McpServer) {
         if (created !== undefined) form.append("created", created);
         if (tags) tags.forEach(t => form.append("tags", String(t)));
 
-        const res = await fetch(`${PAPERLESS_URL}/api/documents/post_document/`, {
-          method: "POST",
-          headers: { Authorization: `Token ${PAPERLESS_TOKEN}` },
-          body: form,
-        });
+        const res = await client.upload("/api/documents/post_document/", form);
         if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
         return ok(await res.json().catch(() => ({ status: "accepted", task: res.headers.get("location") })));
       } catch (e) { return err(e); }
@@ -188,7 +182,7 @@ export function registerCoreTools(server: McpServer) {
     "Get metadata (original filename, checksum, dates, etc.) for a document",
     { id: z.number().describe("Document ID") },
     async ({ id }) => {
-      try { return ok(await paperlessFetch(`/api/documents/${id}/metadata/`)); }
+      try { return ok(await client.fetch(`/api/documents/${id}/metadata/`)); }
       catch (e) { return err(e); }
     },
   );
@@ -198,7 +192,7 @@ export function registerCoreTools(server: McpServer) {
     "Get AI-generated suggestions for correspondent, type, tags, and dates",
     { id: z.number().describe("Document ID") },
     async ({ id }) => {
-      try { return ok(await paperlessFetch(`/api/documents/${id}/suggestions/`)); }
+      try { return ok(await client.fetch(`/api/documents/${id}/suggestions/`)); }
       catch (e) { return err(e); }
     },
   );
@@ -208,7 +202,7 @@ export function registerCoreTools(server: McpServer) {
     "Get notes/comments on a document",
     { id: z.number().describe("Document ID") },
     async ({ id }) => {
-      try { return ok(await paperlessFetch(`/api/documents/${id}/notes/`)); }
+      try { return ok(await client.fetch(`/api/documents/${id}/notes/`)); }
       catch (e) { return err(e); }
     },
   );
@@ -222,7 +216,7 @@ export function registerCoreTools(server: McpServer) {
     },
     async ({ id, note }) => {
       try {
-        return ok(await paperlessFetch(`/api/documents/${id}/notes/`, {
+        return ok(await client.fetch(`/api/documents/${id}/notes/`, {
           method: "POST",
           body: JSON.stringify({ note }),
         }));
@@ -239,7 +233,7 @@ export function registerCoreTools(server: McpServer) {
     },
     async ({ id, note_id }) => {
       try {
-        return ok(await paperlessFetch(`/api/documents/${id}/notes/`, {
+        return ok(await client.fetch(`/api/documents/${id}/notes/`, {
           method: "DELETE",
           body: JSON.stringify({ id: note_id }),
         }));
@@ -259,7 +253,7 @@ export function registerCoreTools(server: McpServer) {
     },
     async ({ documents, method, parameters }) => {
       try {
-        return ok(await paperlessFetch("/api/documents/bulk_edit/", {
+        return ok(await client.fetch("/api/documents/bulk_edit/", {
           method: "POST",
           body: JSON.stringify({ documents, method, parameters: parameters || {} }),
         }));
@@ -268,7 +262,7 @@ export function registerCoreTools(server: McpServer) {
   );
 
   server.tool("get_next_asn", "Get the next available archive serial number", {}, async () => {
-    try { return ok(await paperlessFetch("/api/documents/next_asn/")); }
+    try { return ok(await client.fetch("/api/documents/next_asn/")); }
     catch (e) { return err(e); }
   });
 
@@ -284,7 +278,7 @@ export function registerCoreTools(server: McpServer) {
       ordering: z.string().optional(),
     },
     async (params) => {
-      try { return ok(await paperlessFetch(`/api/correspondents/${buildQS(params)}`)); }
+      try { return ok(await client.fetch(`/api/correspondents/${buildQS(params)}`)); }
       catch (e) { return err(e); }
     },
   );
@@ -294,7 +288,7 @@ export function registerCoreTools(server: McpServer) {
     "Get a single correspondent by ID",
     { id: z.number() },
     async ({ id }) => {
-      try { return ok(await paperlessFetch(`/api/correspondents/${id}/`)); }
+      try { return ok(await client.fetch(`/api/correspondents/${id}/`)); }
       catch (e) { return err(e); }
     },
   );
@@ -310,7 +304,7 @@ export function registerCoreTools(server: McpServer) {
     },
     async (body) => {
       try {
-        return ok(await paperlessFetch("/api/correspondents/", {
+        return ok(await client.fetch("/api/correspondents/", {
           method: "POST",
           body: JSON.stringify(body),
         }));
@@ -330,7 +324,7 @@ export function registerCoreTools(server: McpServer) {
     },
     async ({ id, ...body }) => {
       try {
-        return ok(await paperlessFetch(`/api/correspondents/${id}/`, {
+        return ok(await client.fetch(`/api/correspondents/${id}/`, {
           method: "PATCH",
           body: JSON.stringify(body),
         }));
@@ -343,7 +337,7 @@ export function registerCoreTools(server: McpServer) {
     "Delete a correspondent",
     { id: z.number() },
     async ({ id }) => {
-      try { return ok(await paperlessFetch(`/api/correspondents/${id}/`, { method: "DELETE" })); }
+      try { return ok(await client.fetch(`/api/correspondents/${id}/`, { method: "DELETE" })); }
       catch (e) { return err(e); }
     },
   );
@@ -360,7 +354,7 @@ export function registerCoreTools(server: McpServer) {
       ordering: z.string().optional(),
     },
     async (params) => {
-      try { return ok(await paperlessFetch(`/api/document_types/${buildQS(params)}`)); }
+      try { return ok(await client.fetch(`/api/document_types/${buildQS(params)}`)); }
       catch (e) { return err(e); }
     },
   );
@@ -370,7 +364,7 @@ export function registerCoreTools(server: McpServer) {
     "Get a single document type by ID",
     { id: z.number() },
     async ({ id }) => {
-      try { return ok(await paperlessFetch(`/api/document_types/${id}/`)); }
+      try { return ok(await client.fetch(`/api/document_types/${id}/`)); }
       catch (e) { return err(e); }
     },
   );
@@ -386,7 +380,7 @@ export function registerCoreTools(server: McpServer) {
     },
     async (body) => {
       try {
-        return ok(await paperlessFetch("/api/document_types/", {
+        return ok(await client.fetch("/api/document_types/", {
           method: "POST",
           body: JSON.stringify(body),
         }));
@@ -406,7 +400,7 @@ export function registerCoreTools(server: McpServer) {
     },
     async ({ id, ...body }) => {
       try {
-        return ok(await paperlessFetch(`/api/document_types/${id}/`, {
+        return ok(await client.fetch(`/api/document_types/${id}/`, {
           method: "PATCH",
           body: JSON.stringify(body),
         }));
@@ -419,7 +413,7 @@ export function registerCoreTools(server: McpServer) {
     "Delete a document type",
     { id: z.number() },
     async ({ id }) => {
-      try { return ok(await paperlessFetch(`/api/document_types/${id}/`, { method: "DELETE" })); }
+      try { return ok(await client.fetch(`/api/document_types/${id}/`, { method: "DELETE" })); }
       catch (e) { return err(e); }
     },
   );
@@ -437,7 +431,7 @@ export function registerCoreTools(server: McpServer) {
       ordering: z.string().optional(),
     },
     async (params) => {
-      try { return ok(await paperlessFetch(`/api/tags/${buildQS(params)}`)); }
+      try { return ok(await client.fetch(`/api/tags/${buildQS(params)}`)); }
       catch (e) { return err(e); }
     },
   );
@@ -447,7 +441,7 @@ export function registerCoreTools(server: McpServer) {
     "Get a single tag by ID",
     { id: z.number() },
     async ({ id }) => {
-      try { return ok(await paperlessFetch(`/api/tags/${id}/`)); }
+      try { return ok(await client.fetch(`/api/tags/${id}/`)); }
       catch (e) { return err(e); }
     },
   );
@@ -465,7 +459,7 @@ export function registerCoreTools(server: McpServer) {
     },
     async (body) => {
       try {
-        return ok(await paperlessFetch("/api/tags/", {
+        return ok(await client.fetch("/api/tags/", {
           method: "POST",
           body: JSON.stringify(body),
         }));
@@ -487,7 +481,7 @@ export function registerCoreTools(server: McpServer) {
     },
     async ({ id, ...body }) => {
       try {
-        return ok(await paperlessFetch(`/api/tags/${id}/`, {
+        return ok(await client.fetch(`/api/tags/${id}/`, {
           method: "PATCH",
           body: JSON.stringify(body),
         }));
@@ -500,7 +494,7 @@ export function registerCoreTools(server: McpServer) {
     "Delete a tag",
     { id: z.number() },
     async ({ id }) => {
-      try { return ok(await paperlessFetch(`/api/tags/${id}/`, { method: "DELETE" })); }
+      try { return ok(await client.fetch(`/api/tags/${id}/`, { method: "DELETE" })); }
       catch (e) { return err(e); }
     },
   );
@@ -515,7 +509,7 @@ export function registerCoreTools(server: McpServer) {
       page_size: z.number().optional(),
     },
     async (params) => {
-      try { return ok(await paperlessFetch(`/api/saved_views/${buildQS(params)}`)); }
+      try { return ok(await client.fetch(`/api/saved_views/${buildQS(params)}`)); }
       catch (e) { return err(e); }
     },
   );
@@ -525,7 +519,7 @@ export function registerCoreTools(server: McpServer) {
     "Get a single saved view by ID",
     { id: z.number() },
     async ({ id }) => {
-      try { return ok(await paperlessFetch(`/api/saved_views/${id}/`)); }
+      try { return ok(await client.fetch(`/api/saved_views/${id}/`)); }
       catch (e) { return err(e); }
     },
   );
@@ -541,7 +535,7 @@ export function registerCoreTools(server: McpServer) {
       name__icontains: z.string().optional(),
     },
     async (params) => {
-      try { return ok(await paperlessFetch(`/api/storage_paths/${buildQS(params)}`)); }
+      try { return ok(await client.fetch(`/api/storage_paths/${buildQS(params)}`)); }
       catch (e) { return err(e); }
     },
   );
@@ -551,7 +545,7 @@ export function registerCoreTools(server: McpServer) {
     "Get a single storage path by ID",
     { id: z.number() },
     async ({ id }) => {
-      try { return ok(await paperlessFetch(`/api/storage_paths/${id}/`)); }
+      try { return ok(await client.fetch(`/api/storage_paths/${id}/`)); }
       catch (e) { return err(e); }
     },
   );
@@ -568,7 +562,7 @@ export function registerCoreTools(server: McpServer) {
     },
     async (body) => {
       try {
-        return ok(await paperlessFetch("/api/storage_paths/", {
+        return ok(await client.fetch("/api/storage_paths/", {
           method: "POST",
           body: JSON.stringify(body),
         }));
@@ -589,7 +583,7 @@ export function registerCoreTools(server: McpServer) {
     },
     async ({ id, ...body }) => {
       try {
-        return ok(await paperlessFetch(`/api/storage_paths/${id}/`, {
+        return ok(await client.fetch(`/api/storage_paths/${id}/`, {
           method: "PATCH",
           body: JSON.stringify(body),
         }));
@@ -607,7 +601,7 @@ export function registerCoreTools(server: McpServer) {
       page_size: z.number().optional(),
     },
     async (params) => {
-      try { return ok(await paperlessFetch(`/api/custom_fields/${buildQS(params)}`)); }
+      try { return ok(await client.fetch(`/api/custom_fields/${buildQS(params)}`)); }
       catch (e) { return err(e); }
     },
   );
@@ -617,7 +611,7 @@ export function registerCoreTools(server: McpServer) {
     "Get a single custom field by ID",
     { id: z.number() },
     async ({ id }) => {
-      try { return ok(await paperlessFetch(`/api/custom_fields/${id}/`)); }
+      try { return ok(await client.fetch(`/api/custom_fields/${id}/`)); }
       catch (e) { return err(e); }
     },
   );
@@ -632,7 +626,7 @@ export function registerCoreTools(server: McpServer) {
     },
     async (body) => {
       try {
-        return ok(await paperlessFetch("/api/custom_fields/", {
+        return ok(await client.fetch("/api/custom_fields/", {
           method: "POST",
           body: JSON.stringify(body),
         }));
@@ -650,7 +644,7 @@ export function registerCoreTools(server: McpServer) {
     },
     async ({ id, ...body }) => {
       try {
-        return ok(await paperlessFetch(`/api/custom_fields/${id}/`, {
+        return ok(await client.fetch(`/api/custom_fields/${id}/`, {
           method: "PATCH",
           body: JSON.stringify(body),
         }));

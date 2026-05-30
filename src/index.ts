@@ -1,16 +1,12 @@
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { registerCoreTools } from "./tools/core.js";
-import { registerSearchTools } from "./tools/search.js";
-import { registerWorkflowTools } from "./tools/workflow.js";
-import { registerHelperTools } from "./tools/helpers.js";
+import { config, adminClient } from "./config.js";
+import { createServer } from "./server.js";
+import { startHttpServer } from "./http.js";
 
-const server = new McpServer({ name: "paperless-mcp", version: "1.0.0" });
-
-registerCoreTools(server);
-registerSearchTools(server);
-registerWorkflowTools(server);
-registerHelperTools(server);
-
-const transport = new StdioServerTransport();
-await server.connect(transport);
+if (config.transport === "http") {
+  startHttpServer();
+} else {
+  const server = createServer(adminClient);
+  const transport = new StdioServerTransport();
+  await server.connect(transport);
+}
