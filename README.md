@@ -52,12 +52,12 @@ claude mcp add paperless -- node /path/to/paperless-mcp/dist/index.js
 | Documents | `list_documents`, `get_document`, `download_document`, `update_document`, `delete_document`, `upload_document` |
 | Document details | `get_document_metadata`, `get_document_suggestions`, `get_document_notes`, `add_document_note`, `delete_document_note` |
 | Bulk operations | `bulk_edit_documents`, `get_next_asn` |
-| Correspondents | `list_correspondents`, `get_correspondent`, `create_correspondent`, `delete_correspondent` |
-| Document types | `list_document_types`, `get_document_type`, `create_document_type`, `delete_document_type` |
-| Tags | `list_tags`, `get_tag`, `create_tag`, `delete_tag` |
+| Correspondents | `list_correspondents`, `get_correspondent`, `create_correspondent`, `update_correspondent`, `delete_correspondent` |
+| Document types | `list_document_types`, `get_document_type`, `create_document_type`, `update_document_type`, `delete_document_type` |
+| Tags | `list_tags`, `get_tag`, `create_tag`, `update_tag`, `delete_tag` |
 | Saved views | `list_saved_views`, `get_saved_view` |
-| Storage paths | `list_storage_paths` |
-| Custom fields | `list_custom_fields` |
+| Storage paths | `list_storage_paths`, `get_storage_path`, `create_storage_path`, `update_storage_path` |
+| Custom fields | `list_custom_fields`, `get_custom_field`, `create_custom_field`, `update_custom_field` |
 | System | `get_status`, `get_statistics`, `list_tasks` |
 
 ### Extended Tools

@@ -319,6 +319,26 @@ export function registerCoreTools(server: McpServer) {
   );
 
   server.tool(
+    "update_correspondent",
+    "Update an existing correspondent (partial update)",
+    {
+      id: z.number(),
+      name: z.string().optional(),
+      match: z.string().optional().describe("Auto-matching pattern"),
+      matching_algorithm: z.number().optional().describe("1=any, 2=all, 3=literal, 4=regex, 5=fuzzy, 6=auto"),
+      is_insensitive: z.boolean().optional(),
+    },
+    async ({ id, ...body }) => {
+      try {
+        return ok(await paperlessFetch(`/api/correspondents/${id}/`, {
+          method: "PATCH",
+          body: JSON.stringify(body),
+        }));
+      } catch (e) { return err(e); }
+    },
+  );
+
+  server.tool(
     "delete_correspondent",
     "Delete a correspondent",
     { id: z.number() },
@@ -368,6 +388,26 @@ export function registerCoreTools(server: McpServer) {
       try {
         return ok(await paperlessFetch("/api/document_types/", {
           method: "POST",
+          body: JSON.stringify(body),
+        }));
+      } catch (e) { return err(e); }
+    },
+  );
+
+  server.tool(
+    "update_document_type",
+    "Update an existing document type (partial update)",
+    {
+      id: z.number(),
+      name: z.string().optional(),
+      match: z.string().optional(),
+      matching_algorithm: z.number().optional().describe("1=any, 2=all, 3=literal, 4=regex, 5=fuzzy, 6=auto"),
+      is_insensitive: z.boolean().optional(),
+    },
+    async ({ id, ...body }) => {
+      try {
+        return ok(await paperlessFetch(`/api/document_types/${id}/`, {
+          method: "PATCH",
           body: JSON.stringify(body),
         }));
       } catch (e) { return err(e); }
@@ -434,6 +474,28 @@ export function registerCoreTools(server: McpServer) {
   );
 
   server.tool(
+    "update_tag",
+    "Update an existing tag (partial update)",
+    {
+      id: z.number(),
+      name: z.string().optional(),
+      color: z.string().optional().describe("Hex color like #ff0000"),
+      is_inbox_tag: z.boolean().optional(),
+      match: z.string().optional(),
+      matching_algorithm: z.number().optional().describe("1=any, 2=all, 3=literal, 4=regex, 5=fuzzy, 6=auto"),
+      is_insensitive: z.boolean().optional(),
+    },
+    async ({ id, ...body }) => {
+      try {
+        return ok(await paperlessFetch(`/api/tags/${id}/`, {
+          method: "PATCH",
+          body: JSON.stringify(body),
+        }));
+      } catch (e) { return err(e); }
+    },
+  );
+
+  server.tool(
     "delete_tag",
     "Delete a tag",
     { id: z.number() },
@@ -484,6 +546,57 @@ export function registerCoreTools(server: McpServer) {
     },
   );
 
+  server.tool(
+    "get_storage_path",
+    "Get a single storage path by ID",
+    { id: z.number() },
+    async ({ id }) => {
+      try { return ok(await paperlessFetch(`/api/storage_paths/${id}/`)); }
+      catch (e) { return err(e); }
+    },
+  );
+
+  server.tool(
+    "create_storage_path",
+    "Create a new storage path",
+    {
+      name: z.string(),
+      path: z.string().describe("Path template, e.g. '{correspondent}/{created_year}'"),
+      match: z.string().optional(),
+      matching_algorithm: z.number().optional().describe("1=any, 2=all, 3=literal, 4=regex, 5=fuzzy, 6=auto"),
+      is_insensitive: z.boolean().optional(),
+    },
+    async (body) => {
+      try {
+        return ok(await paperlessFetch("/api/storage_paths/", {
+          method: "POST",
+          body: JSON.stringify(body),
+        }));
+      } catch (e) { return err(e); }
+    },
+  );
+
+  server.tool(
+    "update_storage_path",
+    "Update an existing storage path (partial update)",
+    {
+      id: z.number(),
+      name: z.string().optional(),
+      path: z.string().optional(),
+      match: z.string().optional(),
+      matching_algorithm: z.number().optional().describe("1=any, 2=all, 3=literal, 4=regex, 5=fuzzy, 6=auto"),
+      is_insensitive: z.boolean().optional(),
+    },
+    async ({ id, ...body }) => {
+      try {
+        return ok(await paperlessFetch(`/api/storage_paths/${id}/`, {
+          method: "PATCH",
+          body: JSON.stringify(body),
+        }));
+      } catch (e) { return err(e); }
+    },
+  );
+
   // --- Custom Fields ---
 
   server.tool(
@@ -496,6 +609,52 @@ export function registerCoreTools(server: McpServer) {
     async (params) => {
       try { return ok(await paperlessFetch(`/api/custom_fields/${buildQS(params)}`)); }
       catch (e) { return err(e); }
+    },
+  );
+
+  server.tool(
+    "get_custom_field",
+    "Get a single custom field by ID",
+    { id: z.number() },
+    async ({ id }) => {
+      try { return ok(await paperlessFetch(`/api/custom_fields/${id}/`)); }
+      catch (e) { return err(e); }
+    },
+  );
+
+  server.tool(
+    "create_custom_field",
+    "Create a new custom field",
+    {
+      name: z.string(),
+      data_type: z.enum(["string", "url", "date", "boolean", "integer", "float", "monetary", "documentlink", "select"]).describe("Field data type"),
+      extra_data: z.record(z.unknown()).optional().describe("For 'select': { select_options: [{ label }] }. For 'monetary': { default_currency }"),
+    },
+    async (body) => {
+      try {
+        return ok(await paperlessFetch("/api/custom_fields/", {
+          method: "POST",
+          body: JSON.stringify(body),
+        }));
+      } catch (e) { return err(e); }
+    },
+  );
+
+  server.tool(
+    "update_custom_field",
+    "Update an existing custom field (partial update)",
+    {
+      id: z.number(),
+      name: z.string().optional(),
+      extra_data: z.record(z.unknown()).optional(),
+    },
+    async ({ id, ...body }) => {
+      try {
+        return ok(await paperlessFetch(`/api/custom_fields/${id}/`, {
+          method: "PATCH",
+          body: JSON.stringify(body),
+        }));
+      } catch (e) { return err(e); }
     },
   );
 }
