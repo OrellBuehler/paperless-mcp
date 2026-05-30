@@ -42,6 +42,28 @@ claude mcp add paperless -- node /path/to/paperless-mcp/dist/index.js
 
 5. Run `sync_embeddings` to index your documents for semantic search.
 
+## Updating
+
+The server runs from the compiled `dist/` output, so updating is just rebuild + restart — there's no need to re-run `claude mcp add` (the launch command and path don't change):
+
+```bash
+git pull          # if you track a remote
+npm install       # only if dependencies changed
+npm run build     # recompile src/ -> dist/
+```
+
+Then restart Claude Code (or your MCP client) so it re-spawns the server with the new build. Verify with `claude mcp list` (should show `paperless ✓ connected`) or run `/mcp` inside a session.
+
+To change connection settings (URL, token, embedding provider), edit the `env` block in your config, or re-register the server:
+
+```bash
+claude mcp remove paperless
+claude mcp add paperless --scope user \
+  --env PAPERLESS_URL=http://localhost:8000 \
+  --env PAPERLESS_TOKEN=your-api-token \
+  -- node /path/to/paperless-mcp/dist/index.js
+```
+
 ## Available Tools
 
 ### Core API Tools
