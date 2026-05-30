@@ -49,7 +49,7 @@ claude mcp add paperless -- node /path/to/paperless-mcp/dist/index.js
 | Category | Tools |
 |----------|-------|
 | Search | `search_documents`, `search_autocomplete` |
-| Documents | `list_documents`, `get_document`, `download_document`, `update_document`, `delete_document`, `upload_document` |
+| Documents | `list_documents`, `get_document`, `get_documents`, `download_document`, `update_document`, `delete_document`, `upload_document` |
 | Document details | `get_document_metadata`, `get_document_suggestions`, `get_document_notes`, `add_document_note`, `delete_document_note` |
 | Bulk operations | `bulk_edit_documents`, `get_next_asn` |
 | Correspondents | `list_correspondents`, `get_correspondent`, `create_correspondent`, `update_correspondent`, `delete_correspondent` |
@@ -59,6 +59,8 @@ claude mcp add paperless -- node /path/to/paperless-mcp/dist/index.js
 | Storage paths | `list_storage_paths`, `get_storage_path`, `create_storage_path`, `update_storage_path` |
 | Custom fields | `list_custom_fields`, `get_custom_field`, `create_custom_field`, `update_custom_field` |
 | System | `get_status`, `get_statistics`, `list_tasks` |
+
+> **Note:** `list_documents` and `search_documents` return document metadata only (no OCR text) to keep responses small. Use `get_document` (single) or `get_documents` (batch) to retrieve full content.
 
 ### Extended Tools
 

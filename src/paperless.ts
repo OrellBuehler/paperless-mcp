@@ -42,11 +42,34 @@ export function buildQS(params: Record<string, unknown>): string {
 }
 
 export function ok(data: unknown) {
-  return { content: [{ type: "text" as const, text: JSON.stringify(data, null, 2) }] };
+  return { content: [{ type: "text" as const, text: JSON.stringify(data) }] };
 }
 
 export function err(e: unknown) {
   return { content: [{ type: "text" as const, text: String(e) }], isError: true as const };
+}
+
+function omitContent(doc: unknown): unknown {
+  if (doc && typeof doc === "object" && "content" in doc) {
+    const { content, ...rest } = doc as Record<string, unknown>;
+    return rest;
+  }
+  return doc;
+}
+
+// Strip the heavy `content` (OCR text) field from list/search responses so the
+// model only sees document metadata. Handles paginated responses, bare arrays,
+// and single document objects. Use get_document/get_documents for full content.
+export function summarizeDocs(data: unknown): unknown {
+  if (Array.isArray(data)) return data.map(omitContent);
+  if (data && typeof data === "object") {
+    const obj = data as Record<string, unknown>;
+    if (Array.isArray(obj.results)) {
+      return { ...obj, results: obj.results.map(omitContent) };
+    }
+    return omitContent(obj);
+  }
+  return data;
 }
 
 export interface PaginatedResponse<T = unknown> {

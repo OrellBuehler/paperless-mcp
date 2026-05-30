@@ -4,6 +4,7 @@ vi.stubEnv("PAPERLESS_URL", "http://localhost:8000");
 vi.stubEnv("PAPERLESS_TOKEN", "test-token-123");
 
 const { registerCoreTools } = await import("../tools/core.js");
+const { registerHelperTools } = await import("../tools/helpers.js");
 
 type ToolHandler = (args: any) => Promise<{ content: { text: string }[]; isError?: boolean }>;
 
@@ -15,6 +16,7 @@ function collectTools() {
     },
   };
   registerCoreTools(server as any);
+  registerHelperTools(server as any);
   return tools;
 }
 
@@ -140,5 +142,56 @@ describe("core CRUD tools", () => {
     });
     const res = await tools.get("update_tag")!({ id: 1, name: "x" });
     expect(res.isError).toBe(true);
+  });
+});
+
+describe("document read tools", () => {
+  let mockFetch: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    mockFetch = vi.fn();
+    vi.stubGlobal("fetch", mockFetch);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("list_documents strips OCR content from results", async () => {
+    mockFetch.mockResolvedValueOnce(
+      mockJson({ count: 1, next: null, results: [{ id: 1, title: "Invoice", content: "SECRET OCR TEXT" }] }),
+    );
+    const res = await tools.get("list_documents")!({});
+    expect(res.content[0].text).not.toContain("SECRET OCR TEXT");
+    const payload = JSON.parse(res.content[0].text);
+    expect(payload.results[0]).toEqual({ id: 1, title: "Invoice" });
+  });
+
+  it("search_documents strips OCR content from results", async () => {
+    mockFetch.mockResolvedValueOnce(
+      mockJson({ count: 1, results: [{ id: 2, title: "X", content: "HIDDEN" }] }),
+    );
+    const res = await tools.get("search_documents")!({ query: "x" });
+    expect(res.content[0].text).not.toContain("HIDDEN");
+  });
+
+  it("get_documents returns full content for the requested ids", async () => {
+    mockFetch
+      .mockResolvedValueOnce(mockJson({ id: 1, title: "A", content: "full text one" }))
+      .mockResolvedValueOnce(mockJson({ id: 2, title: "B", content: "full text two" }));
+    const res = await tools.get("get_documents")!({ ids: [1, 2] });
+    const payload = JSON.parse(res.content[0].text);
+    expect(payload).toHaveLength(2);
+    expect(payload[0].content).toBe("full text one");
+    expect(payload[1].content).toBe("full text two");
+  });
+
+  it("get_documents truncates content when max_content_length is set", async () => {
+    mockFetch.mockResolvedValueOnce(mockJson({ id: 1, title: "A", content: "abcdefghij" }));
+    const res = await tools.get("get_documents")!({ ids: [1], max_content_length: 4 });
+    const payload = JSON.parse(res.content[0].text);
+    expect(payload[0].content).toBe("abcd");
+    expect(payload[0].content_truncated).toBe(true);
+    expect(payload[0].content_length).toBe(10);
   });
 });

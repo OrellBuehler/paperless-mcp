@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 vi.stubEnv("PAPERLESS_URL", "http://localhost:8000");
 vi.stubEnv("PAPERLESS_TOKEN", "test-token-123");
 
-const { buildQS, ok, err, paperlessFetch, fetchAllPages, getDocumentContent } = await import("../paperless.js");
+const { buildQS, ok, err, summarizeDocs, paperlessFetch, fetchAllPages, getDocumentContent } = await import("../paperless.js");
 
 describe("buildQS", () => {
   it("returns empty string for empty params", () => {
@@ -60,7 +60,7 @@ describe("ok", () => {
   it("wraps data in MCP text content format", () => {
     const result = ok({ count: 5 });
     expect(result).toEqual({
-      content: [{ type: "text", text: '{\n  "count": 5\n}' }],
+      content: [{ type: "text", text: '{"count":5}' }],
     });
   });
 
@@ -76,7 +76,7 @@ describe("ok", () => {
 
   it("handles arrays", () => {
     const result = ok([1, 2]);
-    expect(result.content[0].text).toBe("[\n  1,\n  2\n]");
+    expect(result.content[0].text).toBe("[1,2]");
   });
 });
 
@@ -99,6 +99,37 @@ describe("err", () => {
     const result = err({ code: 404 });
     expect(result.content[0].text).toBe("[object Object]");
     expect(result.isError).toBe(true);
+  });
+});
+
+describe("summarizeDocs", () => {
+  it("strips content from results in a paginated response", () => {
+    const out = summarizeDocs({
+      count: 1,
+      next: null,
+      results: [{ id: 1, title: "A", content: "long ocr text" }],
+    }) as { count: number; results: Record<string, unknown>[] };
+    expect(out.count).toBe(1);
+    expect(out.results[0]).toEqual({ id: 1, title: "A" });
+    expect(out.results[0]).not.toHaveProperty("content");
+  });
+
+  it("strips content from a bare array of documents", () => {
+    const out = summarizeDocs([{ id: 1, content: "x" }, { id: 2, content: "y" }]);
+    expect(out).toEqual([{ id: 1 }, { id: 2 }]);
+  });
+
+  it("strips content from a single document object", () => {
+    expect(summarizeDocs({ id: 7, title: "T", content: "z" })).toEqual({ id: 7, title: "T" });
+  });
+
+  it("leaves objects without a content field untouched", () => {
+    expect(summarizeDocs({ id: 7, title: "T" })).toEqual({ id: 7, title: "T" });
+  });
+
+  it("passes through non-object data", () => {
+    expect(summarizeDocs("hello")).toBe("hello");
+    expect(summarizeDocs(null)).toBe(null);
   });
 });
 

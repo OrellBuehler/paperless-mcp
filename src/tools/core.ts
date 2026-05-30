@@ -1,7 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { readFile } from "node:fs/promises";
-import { paperlessFetch, buildQS, ok, err, PAPERLESS_URL, PAPERLESS_TOKEN } from "../paperless.js";
+import { paperlessFetch, buildQS, ok, err, summarizeDocs, PAPERLESS_URL, PAPERLESS_TOKEN } from "../paperless.js";
 
 export function registerCoreTools(server: McpServer) {
   // --- System ---
@@ -25,13 +25,13 @@ export function registerCoreTools(server: McpServer) {
 
   server.tool(
     "search_documents",
-    "Full-text search across all documents",
+    "Full-text search across all documents. Returns metadata only (no OCR content) — use get_document or get_documents for full text.",
     {
       query: z.string().describe("Search query"),
       db_only: z.boolean().optional().describe("Search database only, skip full-text index"),
     },
     async ({ query, db_only }) => {
-      try { return ok(await paperlessFetch(`/api/search/${buildQS({ query, db_only })}`)); }
+      try { return ok(summarizeDocs(await paperlessFetch(`/api/search/${buildQS({ query, db_only })}`))); }
       catch (e) { return err(e); }
     },
   );
@@ -53,7 +53,7 @@ export function registerCoreTools(server: McpServer) {
 
   server.tool(
     "list_documents",
-    "List documents with optional filtering, searching and pagination",
+    "List documents with optional filtering, searching and pagination. Returns metadata only (no OCR content) — use get_document or get_documents for full text.",
     {
       page: z.number().optional(),
       page_size: z.number().optional(),
@@ -72,14 +72,14 @@ export function registerCoreTools(server: McpServer) {
       ordering: z.string().optional().describe("Field to order by, prefix with - for descending"),
     },
     async (params) => {
-      try { return ok(await paperlessFetch(`/api/documents/${buildQS(params)}`)); }
+      try { return ok(summarizeDocs(await paperlessFetch(`/api/documents/${buildQS(params)}`))); }
       catch (e) { return err(e); }
     },
   );
 
   server.tool(
     "get_document",
-    "Get a single document by ID",
+    "Get a single document by ID, including its full OCR text content",
     { id: z.number().describe("Document ID") },
     async ({ id }) => {
       try { return ok(await paperlessFetch(`/api/documents/${id}/`)); }

@@ -44,6 +44,34 @@ export function registerHelperTools(server: McpServer) {
   );
 
   server.tool(
+    "get_documents",
+    "Get full details (including OCR text content) for one or more documents by ID. Use this after list_documents/search_documents, which return metadata only.",
+    {
+      ids: z.array(z.number()).describe("Document IDs to fetch in full"),
+      max_content_length: z.number().optional().describe("Truncate each document's content to this many characters"),
+    },
+    async ({ ids, max_content_length }) => {
+      try {
+        const docs = await Promise.all(
+          ids.map((id) => paperlessFetch(`/api/documents/${id}/`) as Promise<Record<string, unknown>>),
+        );
+        const result = docs.map((doc) => {
+          if (max_content_length && typeof doc.content === "string" && doc.content.length > max_content_length) {
+            return {
+              ...doc,
+              content: doc.content.slice(0, max_content_length),
+              content_length: doc.content.length,
+              content_truncated: true,
+            };
+          }
+          return doc;
+        });
+        return ok(result);
+      } catch (e) { return err(e); }
+    },
+  );
+
+  server.tool(
     "get_documents_by_correspondent",
     "Find a correspondent by name and list their documents",
     {
