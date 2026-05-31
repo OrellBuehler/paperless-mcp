@@ -32,7 +32,10 @@ vi.mock("../vectordb.js", () => ({
     { id: 3, title: "C", distance: 0.3 },
   ]),
   getStats: () => ({ indexed_documents: 3, db_path: "/tmp/x" }),
-  upsertDocument: vi.fn(), getIndexedDocIds: () => [], getDocumentHash: () => null, removeDocument: vi.fn(),
+  upsertDocument: vi.fn(),
+  getIndexedDocIds: () => [],
+  getDocumentHash: () => null,
+  removeDocument: vi.fn(),
 }));
 
 const { registerSearchTools } = await import("../tools/search.js");
@@ -42,7 +45,10 @@ type H = (a: any) => Promise<{ content: { text: string }[]; isError?: boolean }>
 let tools: Map<string, H>;
 function register(c: InstanceType<typeof PaperlessClient>) {
   tools = new Map();
-  registerSearchTools({ tool: (n: string, _d: string, _s: unknown, h: H) => tools.set(n, h) } as any, c);
+  registerSearchTools(
+    { tool: (n: string, _d: string, _s: unknown, h: H) => tools.set(n, h) } as any,
+    c,
+  );
 }
 
 describe("semantic_search permission filtering", () => {
@@ -59,7 +65,10 @@ describe("semantic_search permission filtering", () => {
   it("sizes the permission query to cover every candidate id", async () => {
     const c = new PaperlessClient("https://p.example.com", "user-tok");
     let path = "";
-    (c as any).fetch = async (p: string) => { path = p; return { results: [{ id: 1 }, { id: 2 }, { id: 3 }] }; };
+    (c as any).fetch = async (p: string) => {
+      path = p;
+      return { results: [{ id: 1 }, { id: 2 }, { id: 3 }] };
+    };
     register(c);
     await tools.get("semantic_search")!({ query: "q" });
     expect(path).toContain("id__in=1%2C2%2C3");

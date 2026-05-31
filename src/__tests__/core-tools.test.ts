@@ -42,9 +42,15 @@ describe("core CRUD tools", () => {
 
   it("registers the new read + safe-write CRUD tools", () => {
     for (const name of [
-      "update_correspondent", "update_document_type", "update_tag",
-      "get_storage_path", "create_storage_path", "update_storage_path",
-      "get_custom_field", "create_custom_field", "update_custom_field",
+      "update_correspondent",
+      "update_document_type",
+      "update_tag",
+      "get_storage_path",
+      "create_storage_path",
+      "update_storage_path",
+      "get_custom_field",
+      "create_custom_field",
+      "update_custom_field",
     ]) {
       expect(tools.has(name)).toBe(true);
     }
@@ -73,7 +79,10 @@ describe("core CRUD tools", () => {
     const res = await tools.get("update_tag")!({ id: 5, name: "Renamed", color: "#ff0000" });
     expect(mockFetch).toHaveBeenCalledWith(
       "http://localhost:8000/api/tags/5/",
-      expect.objectContaining({ method: "PATCH", body: JSON.stringify({ name: "Renamed", color: "#ff0000" }) }),
+      expect.objectContaining({
+        method: "PATCH",
+        body: JSON.stringify({ name: "Renamed", color: "#ff0000" }),
+      }),
     );
     expect(res.isError).toBeFalsy();
   });
@@ -89,7 +98,10 @@ describe("core CRUD tools", () => {
 
   it("create_storage_path POSTs the body", async () => {
     mockFetch.mockResolvedValueOnce(mockJson({ id: 9 }));
-    await tools.get("create_storage_path")!({ name: "Invoices", path: "{correspondent}/{created_year}" });
+    await tools.get("create_storage_path")!({
+      name: "Invoices",
+      path: "{correspondent}/{created_year}",
+    });
     expect(mockFetch).toHaveBeenCalledWith(
       "http://localhost:8000/api/storage_paths/",
       expect.objectContaining({
@@ -122,7 +134,10 @@ describe("core CRUD tools", () => {
     await tools.get("create_custom_field")!({ name: "Amount", data_type: "monetary" });
     expect(mockFetch).toHaveBeenCalledWith(
       "http://localhost:8000/api/custom_fields/",
-      expect.objectContaining({ method: "POST", body: JSON.stringify({ name: "Amount", data_type: "monetary" }) }),
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ name: "Amount", data_type: "monetary" }),
+      }),
     );
   });
 
@@ -132,6 +147,42 @@ describe("core CRUD tools", () => {
     expect(mockFetch).toHaveBeenCalledWith(
       "http://localhost:8000/api/custom_fields/4/",
       expect.objectContaining({ method: "PATCH", body: JSON.stringify({ name: "Total" }) }),
+    );
+  });
+
+  it("registers the saved-view write tools", () => {
+    expect(tools.has("create_saved_view")).toBe(true);
+    expect(tools.has("update_saved_view")).toBe(true);
+  });
+
+  it("create_saved_view POSTs the body", async () => {
+    mockFetch.mockResolvedValueOnce(mockJson({ id: 11 }));
+    await tools.get("create_saved_view")!({
+      name: "Inbox",
+      filter_rules: [{ rule_type: 6, value: "3" }],
+      show_on_dashboard: true,
+      show_in_sidebar: true,
+    });
+    expect(mockFetch).toHaveBeenCalledWith(
+      "http://localhost:8000/api/saved_views/",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          name: "Inbox",
+          filter_rules: [{ rule_type: 6, value: "3" }],
+          show_on_dashboard: true,
+          show_in_sidebar: true,
+        }),
+      }),
+    );
+  });
+
+  it("update_saved_view PATCHes the id endpoint without the id in the body", async () => {
+    mockFetch.mockResolvedValueOnce(mockJson({ id: 11 }));
+    await tools.get("update_saved_view")!({ id: 11, name: "Renamed" });
+    expect(mockFetch).toHaveBeenCalledWith(
+      "http://localhost:8000/api/saved_views/11/",
+      expect.objectContaining({ method: "PATCH", body: JSON.stringify({ name: "Renamed" }) }),
     );
   });
 
@@ -161,7 +212,11 @@ describe("document read tools", () => {
 
   it("list_documents strips OCR content from results", async () => {
     mockFetch.mockResolvedValueOnce(
-      mockJson({ count: 1, next: null, results: [{ id: 1, title: "Invoice", content: "SECRET OCR TEXT" }] }),
+      mockJson({
+        count: 1,
+        next: null,
+        results: [{ id: 1, title: "Invoice", content: "SECRET OCR TEXT" }],
+      }),
     );
     const res = await tools.get("list_documents")!({});
     expect(res.content[0].text).not.toContain("SECRET OCR TEXT");

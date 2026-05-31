@@ -38,19 +38,23 @@ describe("embeddings with openai provider", () => {
   it("calls openai embedding API correctly", async () => {
     const mockFetch = vi.fn().mockResolvedValueOnce({
       ok: true,
-      json: () => Promise.resolve({
-        data: [
-          { index: 0, embedding: [0.1, 0.2, 0.3] },
-          { index: 1, embedding: [0.4, 0.5, 0.6] },
-        ],
-      }),
+      json: () =>
+        Promise.resolve({
+          data: [
+            { index: 0, embedding: [0.1, 0.2, 0.3] },
+            { index: 1, embedding: [0.4, 0.5, 0.6] },
+          ],
+        }),
     });
     vi.stubGlobal("fetch", mockFetch);
 
     const { embed } = await import("../embeddings.js");
     const result = await embed(["hello", "world"]);
 
-    expect(result).toEqual([[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]]);
+    expect(result).toEqual([
+      [0.1, 0.2, 0.3],
+      [0.4, 0.5, 0.6],
+    ]);
     expect(mockFetch).toHaveBeenCalledWith(
       "https://api.openai.com/v1/embeddings",
       expect.objectContaining({
@@ -65,19 +69,23 @@ describe("embeddings with openai provider", () => {
   it("sorts openai results by index", async () => {
     const mockFetch = vi.fn().mockResolvedValueOnce({
       ok: true,
-      json: () => Promise.resolve({
-        data: [
-          { index: 1, embedding: [0.4, 0.5] },
-          { index: 0, embedding: [0.1, 0.2] },
-        ],
-      }),
+      json: () =>
+        Promise.resolve({
+          data: [
+            { index: 1, embedding: [0.4, 0.5] },
+            { index: 0, embedding: [0.1, 0.2] },
+          ],
+        }),
     });
     vi.stubGlobal("fetch", mockFetch);
 
     const { embed } = await import("../embeddings.js");
     const result = await embed(["first", "second"]);
 
-    expect(result).toEqual([[0.1, 0.2], [0.4, 0.5]]);
+    expect(result).toEqual([
+      [0.1, 0.2],
+      [0.4, 0.5],
+    ]);
   });
 
   it("throws on openai API error", async () => {
@@ -95,9 +103,10 @@ describe("embeddings with openai provider", () => {
   it("embedSingle wraps embed for single text", async () => {
     const mockFetch = vi.fn().mockResolvedValueOnce({
       ok: true,
-      json: () => Promise.resolve({
-        data: [{ index: 0, embedding: [0.1, 0.2, 0.3] }],
-      }),
+      json: () =>
+        Promise.resolve({
+          data: [{ index: 0, embedding: [0.1, 0.2, 0.3] }],
+        }),
     });
     vi.stubGlobal("fetch", mockFetch);
 
@@ -148,16 +157,23 @@ describe("embeddings with ollama provider", () => {
   it("calls ollama embedding API correctly", async () => {
     const mockFetch = vi.fn().mockResolvedValueOnce({
       ok: true,
-      json: () => Promise.resolve({
-        embeddings: [[0.1, 0.2], [0.3, 0.4]],
-      }),
+      json: () =>
+        Promise.resolve({
+          embeddings: [
+            [0.1, 0.2],
+            [0.3, 0.4],
+          ],
+        }),
     });
     vi.stubGlobal("fetch", mockFetch);
 
     const { embed } = await import("../embeddings.js");
     const result = await embed(["hello", "world"]);
 
-    expect(result).toEqual([[0.1, 0.2], [0.3, 0.4]]);
+    expect(result).toEqual([
+      [0.1, 0.2],
+      [0.3, 0.4],
+    ]);
     expect(mockFetch).toHaveBeenCalledWith(
       "http://localhost:11434/api/embed",
       expect.objectContaining({ method: "POST" }),

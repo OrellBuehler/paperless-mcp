@@ -1,8 +1,13 @@
 export type EmbeddingProvider = "openai" | "ollama";
 
 const EMBEDDING_PROVIDER = (process.env.EMBEDDING_PROVIDER || "openai") as EmbeddingProvider;
-const EMBEDDING_MODEL = process.env.EMBEDDING_MODEL || (EMBEDDING_PROVIDER === "openai" ? "text-embedding-3-small" : "nomic-embed-text");
-const EMBEDDING_DIMENSIONS = parseInt(process.env.EMBEDDING_DIMENSIONS || (EMBEDDING_PROVIDER === "openai" ? "1536" : "768"), 10);
+const EMBEDDING_MODEL =
+  process.env.EMBEDDING_MODEL ||
+  (EMBEDDING_PROVIDER === "openai" ? "text-embedding-3-small" : "nomic-embed-text");
+const EMBEDDING_DIMENSIONS = parseInt(
+  process.env.EMBEDDING_DIMENSIONS || (EMBEDDING_PROVIDER === "openai" ? "1536" : "768"),
+  10,
+);
 if (isNaN(EMBEDDING_DIMENSIONS) || EMBEDDING_DIMENSIONS <= 0) {
   console.error("EMBEDDING_DIMENSIONS must be a positive integer");
   process.exit(1);
@@ -36,8 +41,8 @@ async function embedOpenAI(texts: string[]): Promise<number[][]> {
     const body = await res.text();
     throw new Error(`OpenAI embedding error: ${res.status} ${body}`);
   }
-  const data = await res.json() as { data: { embedding: number[]; index: number }[] };
-  return data.data.sort((a, b) => a.index - b.index).map(d => d.embedding);
+  const data = (await res.json()) as { data: { embedding: number[]; index: number }[] };
+  return data.data.sort((a, b) => a.index - b.index).map((d) => d.embedding);
 }
 
 async function embedOllama(texts: string[]): Promise<number[][]> {
@@ -50,7 +55,7 @@ async function embedOllama(texts: string[]): Promise<number[][]> {
     const body = await res.text();
     throw new Error(`Ollama embedding error: ${res.status} ${body}`);
   }
-  const data = await res.json() as { embeddings: number[][] };
+  const data = (await res.json()) as { embeddings: number[][] };
   return data.embeddings;
 }
 

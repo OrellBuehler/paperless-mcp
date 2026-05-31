@@ -36,7 +36,10 @@ function setCors(res: ServerResponse, origin: string | undefined) {
     res.setHeader("Vary", "Origin");
   }
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Paperless-Token, mcp-session-id");
+  res.setHeader(
+    "Access-Control-Allow-Headers",
+    "Content-Type, Authorization, X-Paperless-Token, mcp-session-id",
+  );
   res.setHeader("Access-Control-Expose-Headers", "mcp-session-id");
 }
 
@@ -53,7 +56,10 @@ export function startHttpServer(): void {
   const httpServer = createHttpServer(async (req, res) => {
     const origin = req.headers.origin;
     setCors(res, origin);
-    if (req.method === "OPTIONS") { res.writeHead(204).end(); return; }
+    if (req.method === "OPTIONS") {
+      res.writeHead(204).end();
+      return;
+    }
 
     if (!hostAllowed(req.headers.host)) {
       res.writeHead(403, { "Content-Type": "application/json" });
@@ -67,7 +73,10 @@ export function startHttpServer(): void {
     }
 
     const url = new URL(req.url || "/", `http://localhost:${config.port}`);
-    if (url.pathname !== "/mcp") { res.writeHead(404).end(); return; }
+    if (url.pathname !== "/mcp") {
+      res.writeHead(404).end();
+      return;
+    }
 
     const rawSessionId = req.headers["mcp-session-id"];
     const sessionId = Array.isArray(rawSessionId) ? rawSessionId[0] : rawSessionId;
@@ -90,14 +99,20 @@ export function startHttpServer(): void {
       const token = extractToken(req.headers);
       if (!token) {
         res.writeHead(401, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ error: "Missing Paperless token (Authorization: Bearer <token>)" }));
+        res.end(
+          JSON.stringify({ error: "Missing Paperless token (Authorization: Bearer <token>)" }),
+        );
         return;
       }
 
       const transport = new StreamableHTTPServerTransport({
         sessionIdGenerator: () => randomUUID(),
-        onsessioninitialized: (sid: string) => { transports.set(sid, transport); },
-        onsessionclosed: (sid: string) => { transports.delete(sid); },
+        onsessioninitialized: (sid: string) => {
+          transports.set(sid, transport);
+        },
+        onsessionclosed: (sid: string) => {
+          transports.delete(sid);
+        },
       });
       transport.onclose = () => {
         if (transport.sessionId) transports.delete(transport.sessionId);

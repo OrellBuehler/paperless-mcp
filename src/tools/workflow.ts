@@ -29,10 +29,19 @@ export function registerWorkflowTools(server: McpServer, client: PaperlessClient
     "Get AI suggestions for a document and apply them in one step. Returns what was changed.",
     {
       id: z.number().describe("Document ID"),
-      apply_correspondent: z.boolean().optional().describe("Apply suggested correspondent (default true)"),
-      apply_document_type: z.boolean().optional().describe("Apply suggested document type (default true)"),
+      apply_correspondent: z
+        .boolean()
+        .optional()
+        .describe("Apply suggested correspondent (default true)"),
+      apply_document_type: z
+        .boolean()
+        .optional()
+        .describe("Apply suggested document type (default true)"),
       apply_tags: z.boolean().optional().describe("Apply suggested tags (default true)"),
-      apply_storage_path: z.boolean().optional().describe("Apply suggested storage path (default true)"),
+      apply_storage_path: z
+        .boolean()
+        .optional()
+        .describe("Apply suggested storage path (default true)"),
     },
     async ({ id, apply_correspondent, apply_document_type, apply_tags, apply_storage_path }) => {
       try {
@@ -66,7 +75,9 @@ export function registerWorkflowTools(server: McpServer, client: PaperlessClient
         });
 
         return ok({ id, applied: updates, suggestions, updated_document: updated });
-      } catch (e) { return err(e); }
+      } catch (e) {
+        return err(e);
+      }
     },
   );
 
@@ -79,12 +90,16 @@ export function registerWorkflowTools(server: McpServer, client: PaperlessClient
     async ({ limit }) => {
       try {
         const maxDocs = limit || 20;
-        const data = await client.fetch(`/api/documents/${buildQS({ is_in_inbox: true, page_size: maxDocs })}`) as PaginatedResponse<Document>;
+        const data = (await client.fetch(
+          `/api/documents/${buildQS({ is_in_inbox: true, page_size: maxDocs })}`,
+        )) as PaginatedResponse<Document>;
         const proposals: unknown[] = [];
 
         for (const doc of data.results) {
           try {
-            const suggestions = await client.fetch(`/api/documents/${doc.id}/suggestions/`) as Suggestion;
+            const suggestions = (await client.fetch(
+              `/api/documents/${doc.id}/suggestions/`,
+            )) as Suggestion;
             proposals.push({
               id: doc.id,
               title: doc.title,
@@ -112,7 +127,9 @@ export function registerWorkflowTools(server: McpServer, client: PaperlessClient
           proposals,
           note: "Use auto_classify_document or update_document to apply changes.",
         });
-      } catch (e) { return err(e); }
+      } catch (e) {
+        return err(e);
+      }
     },
   );
 
@@ -122,18 +139,23 @@ export function registerWorkflowTools(server: McpServer, client: PaperlessClient
     {
       query: z.string().describe("Search query to find matching documents"),
       tag_id: z.number().describe("Tag ID to add to matching documents"),
-      dry_run: z.boolean().optional().describe("If true, only return matching documents without tagging"),
+      dry_run: z
+        .boolean()
+        .optional()
+        .describe("If true, only return matching documents without tagging"),
     },
     async ({ query, tag_id, dry_run }) => {
       try {
-        const data = await client.fetch(`/api/documents/${buildQS({ query, page_size: 100 })}`) as PaginatedResponse<Document>;
-        const docIds = data.results.map(d => d.id);
+        const data = (await client.fetch(
+          `/api/documents/${buildQS({ query, page_size: 100 })}`,
+        )) as PaginatedResponse<Document>;
+        const docIds = data.results.map((d) => d.id);
 
         if (dry_run) {
           return ok({
             query,
             tag_id,
-            matching_documents: data.results.map(d => ({ id: d.id, title: d.title })),
+            matching_documents: data.results.map((d) => ({ id: d.id, title: d.title })),
             count: docIds.length,
             total_matches: data.count,
             note: "Dry run — no changes made. Set dry_run to false to apply.",
@@ -159,9 +181,14 @@ export function registerWorkflowTools(server: McpServer, client: PaperlessClient
           tagged_count: docIds.length,
           total_matches: data.count,
           result,
-          note: data.count > 100 ? `Only tagged first 100 of ${data.count} matches. Run again to tag more.` : undefined,
+          note:
+            data.count > 100
+              ? `Only tagged first 100 of ${data.count} matches. Run again to tag more.`
+              : undefined,
         });
-      } catch (e) { return err(e); }
+      } catch (e) {
+        return err(e);
+      }
     },
   );
 }

@@ -14,7 +14,9 @@ export class PaperlessClient {
       ...options,
       headers: {
         Authorization: `Token ${this.token}`,
-        ...(options.body && typeof options.body === "string" ? { "Content-Type": "application/json" } : {}),
+        ...(options.body && typeof options.body === "string"
+          ? { "Content-Type": "application/json" }
+          : {}),
         ...options.headers,
       },
     });
@@ -31,7 +33,9 @@ export class PaperlessClient {
     let page = 1;
     while (true) {
       const sep = path.includes("?") ? "&" : "?";
-      const data = await this.fetch(`${path}${sep}page=${page}&page_size=100`) as PaginatedResponse<T>;
+      const data = (await this.fetch(
+        `${path}${sep}page=${page}&page_size=100`,
+      )) as PaginatedResponse<T>;
       all.push(...data.results);
       if (!data.next) break;
       page++;
@@ -40,7 +44,7 @@ export class PaperlessClient {
   }
 
   async getDocumentContent(id: number): Promise<string> {
-    const doc = await this.fetch(`/api/documents/${id}/`) as { content?: string };
+    const doc = (await this.fetch(`/api/documents/${id}/`)) as { content?: string };
     return doc.content || "";
   }
 
@@ -49,6 +53,10 @@ export class PaperlessClient {
   }
 
   upload(path: string, form: FormData): Promise<Response> {
-    return fetch(`${this.baseUrl}${path}`, { method: "POST", headers: { Authorization: `Token ${this.token}` }, body: form });
+    return fetch(`${this.baseUrl}${path}`, {
+      method: "POST",
+      headers: { Authorization: `Token ${this.token}` },
+      body: form,
+    });
   }
 }
