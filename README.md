@@ -1,8 +1,25 @@
 # paperless-mcp
 
-MCP server for [Paperless-ngx](https://docs.paperless-ngx.com/) that exposes the REST API as tools for AI agents. Includes semantic search via local vector embeddings.
+MCP server for [Paperless-ngx](https://docs.paperless-ngx.com/) that exposes the REST API as tools for AI agents. Includes optional semantic search via local vector embeddings.
 
-## Setup
+## Install
+
+The package is published as [`@orellbuehler/paperless-mcp`](https://www.npmjs.com/package/@orellbuehler/paperless-mcp) and runs directly with `npx` — no clone or build needed:
+
+```bash
+claude mcp add paperless \
+  --env PAPERLESS_URL=https://your-paperless-instance.example.com \
+  --env PAPERLESS_TOKEN=your-api-token \
+  -- npx -y @orellbuehler/paperless-mcp
+```
+
+See [Usage with Claude Code](#usage-with-claude-code) for the equivalent JSON config.
+
+Semantic search is off by default. To enable it, set `EMBEDDINGS_ENABLED=true`; the `better-sqlite3` and `sqlite-vec` native modules are installed automatically as optional dependencies (this requires a build toolchain on your platform). The core document tools work without them.
+
+## Setup (from source)
+
+For local development, clone the repo and build the `dist/` output:
 
 ```bash
 npm install
@@ -13,34 +30,28 @@ npm run build
 
 1. Get your API token from Paperless-ngx (Settings > Administration, or `POST /api/token/`)
 
-2. Add the server to your Claude Code settings:
-
-```bash
-claude mcp add paperless -- node /path/to/paperless-mcp/dist/index.js
-```
-
-3. Set the environment variables by editing `~/.claude/settings.json`:
+2. Set the environment variables by editing `~/.claude/settings.json`. Using the published package:
 
 ```json
 {
   "mcpServers": {
     "paperless": {
-      "command": "node",
-      "args": ["/path/to/paperless-mcp/dist/index.js"],
+      "command": "npx",
+      "args": ["-y", "@orellbuehler/paperless-mcp"],
       "env": {
         "PAPERLESS_URL": "https://your-paperless-instance.example.com",
-        "PAPERLESS_TOKEN": "your-api-token",
-        "EMBEDDING_PROVIDER": "openai",
-        "OPENAI_API_KEY": "sk-..."
+        "PAPERLESS_TOKEN": "your-api-token"
       }
     }
   }
 }
 ```
 
-4. Restart Claude Code. The tools will be available immediately.
+If you built from source instead, use `"command": "node"` with `"args": ["/path/to/paperless-mcp/dist/index.js"]`. To enable semantic search, add `"EMBEDDINGS_ENABLED": "true"` (and `"OPENAI_API_KEY"` if using the OpenAI embedding provider).
 
-5. Run `sync_embeddings` to index your documents for semantic search.
+3. Restart Claude Code. The tools will be available immediately.
+
+4. If you enabled semantic search, run `sync_embeddings` to index your documents.
 
 ## Updating
 

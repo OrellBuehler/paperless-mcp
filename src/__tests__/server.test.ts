@@ -10,7 +10,7 @@ describe("createServer", () => {
     process.env.OPENAI_API_KEY = "test-key";
     const { createServer } = await import("../server.js");
     const { adminClient } = await import("../config.js");
-    expect(() => createServer(adminClient)).not.toThrow();
+    await expect(createServer(adminClient)).resolves.toBeDefined();
   });
 
   it("builds a server without throwing when embeddings are disabled", async () => {
@@ -20,6 +20,6 @@ describe("createServer", () => {
     process.env.EMBEDDINGS_ENABLED = "false";
     const { createServer } = await import("../server.js");
     const { adminClient } = await import("../config.js");
-    expect(() => createServer(adminClient)).not.toThrow();
+    await expect(createServer(adminClient)).resolves.toBeDefined();
   });
 });

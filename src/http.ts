@@ -118,7 +118,7 @@ export function startHttpServer(): void {
         if (transport.sessionId) transports.delete(transport.sessionId);
       };
 
-      const server = createServer(clientFor(token));
+      const server = await createServer(clientFor(token));
       await server.connect(transport);
 
       const body = await readBody(req);
