@@ -1,6 +1,6 @@
 {
   "name": "@orellbuehler/paperless-mcp",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Model Context Protocol server for Paperless-ngx: documents, organization, saved views, users, workflows, and optional semantic search.",
   "type": "module",
   "bin": {
