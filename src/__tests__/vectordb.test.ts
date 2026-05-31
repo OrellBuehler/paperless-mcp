@@ -19,7 +19,11 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.restoreAllMocks();
-  try { rmSync(tempDir, { recursive: true, force: true }); } catch {}
+  try {
+    rmSync(tempDir, { recursive: true, force: true });
+  } catch {
+    // best-effort cleanup
+  }
 });
 
 describe("vectordb", () => {

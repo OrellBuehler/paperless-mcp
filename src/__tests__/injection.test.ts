@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 
 vi.stubEnv("PAPERLESS_URL", "https://p.example.com");
 vi.stubEnv("PAPERLESS_TOKEN", "admin-tok");
