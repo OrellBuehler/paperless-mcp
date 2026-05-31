@@ -524,6 +524,52 @@ export function registerCoreTools(server: McpServer, client: PaperlessClient) {
     },
   );
 
+  server.tool(
+    "create_saved_view",
+    "Create a new saved view",
+    {
+      name: z.string(),
+      filter_rules: z.array(z.object({ rule_type: z.number(), value: z.string() }))
+        .describe("Filter rules: rule_type is a Paperless filter code (e.g. 0=title contains, 3=correspondent id, 6=has tag, 19=ASN); value is the matched value as a string."),
+      show_on_dashboard: z.boolean(),
+      show_in_sidebar: z.boolean(),
+      sort_field: z.string().optional().describe("Field to sort by, e.g. 'created'"),
+      sort_reverse: z.boolean().optional(),
+      page_size: z.number().optional(),
+    },
+    async (body) => {
+      try {
+        return ok(await client.fetch("/api/saved_views/", {
+          method: "POST",
+          body: JSON.stringify(body),
+        }));
+      } catch (e) { return err(e); }
+    },
+  );
+
+  server.tool(
+    "update_saved_view",
+    "Update an existing saved view (partial update)",
+    {
+      id: z.number(),
+      name: z.string().optional(),
+      filter_rules: z.array(z.object({ rule_type: z.number(), value: z.string() })).optional(),
+      show_on_dashboard: z.boolean().optional(),
+      show_in_sidebar: z.boolean().optional(),
+      sort_field: z.string().optional(),
+      sort_reverse: z.boolean().optional(),
+      page_size: z.number().optional(),
+    },
+    async ({ id, ...body }) => {
+      try {
+        return ok(await client.fetch(`/api/saved_views/${id}/`, {
+          method: "PATCH",
+          body: JSON.stringify(body),
+        }));
+      } catch (e) { return err(e); }
+    },
+  );
+
   // --- Storage Paths ---
 
   server.tool(

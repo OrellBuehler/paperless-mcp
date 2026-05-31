@@ -135,6 +135,42 @@ describe("core CRUD tools", () => {
     );
   });
 
+  it("registers the saved-view write tools", () => {
+    expect(tools.has("create_saved_view")).toBe(true);
+    expect(tools.has("update_saved_view")).toBe(true);
+  });
+
+  it("create_saved_view POSTs the body", async () => {
+    mockFetch.mockResolvedValueOnce(mockJson({ id: 11 }));
+    await tools.get("create_saved_view")!({
+      name: "Inbox",
+      filter_rules: [{ rule_type: 6, value: "3" }],
+      show_on_dashboard: true,
+      show_in_sidebar: true,
+    });
+    expect(mockFetch).toHaveBeenCalledWith(
+      "http://localhost:8000/api/saved_views/",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          name: "Inbox",
+          filter_rules: [{ rule_type: 6, value: "3" }],
+          show_on_dashboard: true,
+          show_in_sidebar: true,
+        }),
+      }),
+    );
+  });
+
+  it("update_saved_view PATCHes the id endpoint without the id in the body", async () => {
+    mockFetch.mockResolvedValueOnce(mockJson({ id: 11 }));
+    await tools.get("update_saved_view")!({ id: 11, name: "Renamed" });
+    expect(mockFetch).toHaveBeenCalledWith(
+      "http://localhost:8000/api/saved_views/11/",
+      expect.objectContaining({ method: "PATCH", body: JSON.stringify({ name: "Renamed" }) }),
+    );
+  });
+
   it("returns an MCP error result when the API call fails", async () => {
     mockFetch.mockResolvedValueOnce({
       ok: false,
