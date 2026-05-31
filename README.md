@@ -82,7 +82,7 @@ claude mcp add paperless --scope user \
 | Custom fields | `list_custom_fields`, `get_custom_field`, `create_custom_field`, `update_custom_field` |
 | Users | `list_users`, `get_user`, `create_user`, `update_user` |
 | Groups | `list_groups`, `get_group`, `create_group`, `update_group` |
-| Workflows | `list_workflows`, `get_workflow`, `create_workflow`, `update_workflow` |
+| Paperless workflows | `list_workflows`, `get_workflow`, `create_workflow`, `update_workflow` |
 | System | `get_status`, `get_statistics`, `list_tasks` |
 
 > **Note:** `list_documents` and `search_documents` return document metadata only (no OCR text) to keep responses small. Use `get_document` (single) or `get_documents` (batch) to retrieve full content.
