@@ -102,6 +102,8 @@ claude mcp add paperless --scope user \
 | `MCP_TRANSPORT` | No | `stdio` (default) or `http` |
 | `PORT` | No | Port for the HTTP server (default: `3001`, http mode only) |
 | `EMBEDDINGS_ENABLED` | No | Set to `true` to enable semantic search tools (default: off) |
+| `MCP_ALLOWED_ORIGINS` | No | Comma-separated `Origin` allowlist for browser clients (http mode). Empty (default) blocks all cross-origin browser requests; use `*` to allow any |
+| `MCP_ALLOWED_HOSTS` | No | Comma-separated `Host` allowlist for DNS-rebinding protection (http mode). Empty (default) disables host validation |
 | `EMBEDDING_PROVIDER` | No | `openai` or `ollama` (default: `openai`) |
 | `OPENAI_API_KEY` | If using OpenAI | Required for OpenAI embeddings |
 | `OLLAMA_URL` | If using Ollama | Ollama server URL (default: `http://localhost:11434`) |
@@ -139,6 +141,11 @@ only sees the documents their account permits.
 index, and the `sync_embeddings` tool is only available to a session using the
 admin token. `semantic_search` results are filtered through the requesting user's
 token, so users never see documents they cannot access.
+
+Non-browser MCP clients (which don't send an `Origin` header) work out of the box.
+Browser-based clients are blocked unless you list their origin in
+`MCP_ALLOWED_ORIGINS`. If the server is reachable on a public hostname, set
+`MCP_ALLOWED_HOSTS` to the expected host(s) for DNS-rebinding protection.
 
 ## Run as an HTTP sidecar (Docker Compose)
 

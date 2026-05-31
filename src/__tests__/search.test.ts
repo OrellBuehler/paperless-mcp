@@ -55,6 +55,26 @@ describe("semantic_search permission filtering", () => {
     expect(parsed.results.map((r: { id: number }) => r.id)).toEqual([1, 3]);
     expect(parsed.count).toBe(2);
   });
+
+  it("sizes the permission query to cover every candidate id", async () => {
+    const c = new PaperlessClient("https://p.example.com", "user-tok");
+    let path = "";
+    (c as any).fetch = async (p: string) => { path = p; return { results: [{ id: 1 }, { id: 2 }, { id: 3 }] }; };
+    register(c);
+    await tools.get("semantic_search")!({ query: "q" });
+    expect(path).toContain("id__in=1%2C2%2C3");
+    expect(path).toContain("page_size=3");
+  });
+
+  it("never returns more than the requested limit", async () => {
+    const c = new PaperlessClient("https://p.example.com", "user-tok");
+    (c as any).fetch = async () => ({ results: [{ id: 1 }, { id: 2 }, { id: 3 }] });
+    register(c);
+    const res = await tools.get("semantic_search")!({ query: "q", limit: 2 });
+    const parsed = JSON.parse(res.content[0].text);
+    expect(parsed.results.map((r: { id: number }) => r.id)).toEqual([1, 2]);
+    expect(parsed.count).toBe(2);
+  });
 });
 
 describe("sync_embeddings admin gate", () => {
@@ -67,5 +87,18 @@ describe("sync_embeddings admin gate", () => {
     expect(tools.has("sync_embeddings")).toBe(false);
     expect(tools.has("semantic_search")).toBe(true);
     expect(tools.has("embedding_status")).toBe(true);
+  });
+});
+
+describe("embedding_status db_path exposure", () => {
+  it("includes db_path for the admin token", async () => {
+    register(new PaperlessClient("https://p.example.com", "admin-tok"));
+    const res = await tools.get("embedding_status")!({});
+    expect(JSON.parse(res.content[0].text).db_path).toBe("/tmp/x");
+  });
+  it("omits db_path for a non-admin token", async () => {
+    register(new PaperlessClient("https://p.example.com", "user-tok"));
+    const res = await tools.get("embedding_status")!({});
+    expect(JSON.parse(res.content[0].text).db_path).toBeUndefined();
   });
 });

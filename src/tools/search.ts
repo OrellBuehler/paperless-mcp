@@ -27,13 +27,16 @@ export function registerSearchTools(server: McpServer, client: PaperlessClient) 
     },
     async ({ query, limit }) => {
       try {
+        const limitN = limit || 10;
         const queryEmbedding = await embedSingle(query);
-        const hits = searchSimilar(queryEmbedding, limit || 10);
+        // Over-fetch from the global index, then drop docs the user's token
+        // cannot see, so permission filtering doesn't starve restricted users.
+        const hits = searchSimilar(queryEmbedding, limitN * 5);
         if (hits.length === 0) return ok({ count: 0, results: [] });
         const ids = hits.map(h => h.id);
-        const resp = await client.fetch(`/api/documents/${buildQS({ id__in: ids })}`) as { results?: { id: number }[] };
+        const resp = await client.fetch(`/api/documents/${buildQS({ id__in: ids, page_size: ids.length })}`) as { results?: { id: number }[] };
         const allowed = new Set((resp.results || []).map(d => d.id));
-        const results = hits.filter(h => allowed.has(h.id)).map(h => ({ id: h.id, title: h.title, distance: h.distance }));
+        const results = hits.filter(h => allowed.has(h.id)).slice(0, limitN).map(h => ({ id: h.id, title: h.title, distance: h.distance }));
         return ok({ count: results.length, results });
       } catch (e) { return err(e); }
     },
@@ -126,9 +129,10 @@ export function registerSearchTools(server: McpServer, client: PaperlessClient) 
     {},
     async () => {
       try {
-        const stats = getStats();
+        const { db_path, ...stats } = getStats();
         const provider = getProviderInfo();
-        return ok({ ...stats, ...provider });
+        const isAdmin = client.token === config.adminToken;
+        return ok({ ...stats, ...(isAdmin ? { db_path } : {}), ...provider });
       } catch (e) { return err(e); }
     },
   );

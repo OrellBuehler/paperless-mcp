@@ -17,8 +17,24 @@ export function extractToken(headers: Headers): string | null {
   return null;
 }
 
-function setCors(res: ServerResponse) {
-  res.setHeader("Access-Control-Allow-Origin", "*");
+export function originAllowed(origin: string | undefined): boolean {
+  if (!origin) return true; // non-browser clients don't send Origin
+  return config.allowedOrigins.includes("*") || config.allowedOrigins.includes(origin);
+}
+
+export function hostAllowed(host: string | undefined): boolean {
+  if (config.allowedHosts.length === 0) return true; // host validation disabled
+  if (!host) return false;
+  return config.allowedHosts.includes(host) || config.allowedHosts.includes(host.split(":")[0]);
+}
+
+function setCors(res: ServerResponse, origin: string | undefined) {
+  if (config.allowedOrigins.includes("*")) {
+    res.setHeader("Access-Control-Allow-Origin", "*");
+  } else if (origin && config.allowedOrigins.includes(origin)) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+    res.setHeader("Vary", "Origin");
+  }
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Paperless-Token, mcp-session-id");
   res.setHeader("Access-Control-Expose-Headers", "mcp-session-id");
@@ -35,8 +51,20 @@ export function startHttpServer(): void {
   const transports = new Map<string, StreamableHTTPServerTransport>();
 
   const httpServer = createHttpServer(async (req, res) => {
-    setCors(res);
+    const origin = req.headers.origin;
+    setCors(res, origin);
     if (req.method === "OPTIONS") { res.writeHead(204).end(); return; }
+
+    if (!hostAllowed(req.headers.host)) {
+      res.writeHead(403, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Host not allowed" }));
+      return;
+    }
+    if (!originAllowed(origin)) {
+      res.writeHead(403, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Origin not allowed" }));
+      return;
+    }
 
     const url = new URL(req.url || "/", `http://localhost:${config.port}`);
     if (url.pathname !== "/mcp") { res.writeHead(404).end(); return; }

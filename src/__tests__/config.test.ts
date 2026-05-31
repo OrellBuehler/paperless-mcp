@@ -8,6 +8,8 @@ describe("config", () => {
     delete process.env.MCP_TRANSPORT;
     delete process.env.PORT;
     delete process.env.EMBEDDINGS_ENABLED;
+    delete process.env.MCP_ALLOWED_ORIGINS;
+    delete process.env.MCP_ALLOWED_HOSTS;
   });
 
   it("defaults transport=stdio, port=3001, embeddings off, strips trailing slash", async () => {
@@ -17,6 +19,16 @@ describe("config", () => {
     expect(config.embeddingsEnabled).toBe(false);
     expect(config.baseUrl).toBe("https://p.example.com");
     expect(config.adminToken).toBe("admin-tok");
+    expect(config.allowedOrigins).toEqual([]);
+    expect(config.allowedHosts).toEqual([]);
+  });
+
+  it("parses comma-separated origin and host allowlists", async () => {
+    process.env.MCP_ALLOWED_ORIGINS = "https://a.example.com, https://b.example.com";
+    process.env.MCP_ALLOWED_HOSTS = "mcp.example.com";
+    const { config } = await import("../config.js");
+    expect(config.allowedOrigins).toEqual(["https://a.example.com", "https://b.example.com"]);
+    expect(config.allowedHosts).toEqual(["mcp.example.com"]);
   });
 
   it("reads http transport, custom port, embeddings on", async () => {
