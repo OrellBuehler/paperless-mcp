@@ -4,8 +4,7 @@ export function buildQS(params: Record<string, unknown>): string {
     if (v === undefined || v === null) continue;
     if (Array.isArray(v)) {
       if (v.length === 0) continue;
-      if (k === "id__in") sp.set(k, v.join(","));
-      else v.forEach((item) => sp.append(k, String(item)));
+      sp.set(k, v.join(","));
     } else {
       sp.set(k, String(v));
     }

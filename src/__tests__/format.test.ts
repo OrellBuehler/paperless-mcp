@@ -6,10 +6,10 @@ describe("buildQS", () => {
   it("builds one param", () => expect(buildQS({ query: "test" })).toBe("?query=test"));
   it("encodes special characters", () =>
     expect(buildQS({ query: "a & b" })).toBe("?query=a+%26+b"));
-  it("repeats keys for generic arrays", () =>
-    expect(buildQS({ tags__id__all: [1, 2, 3] })).toBe(
-      "?tags__id__all=1&tags__id__all=2&tags__id__all=3",
-    ));
+  it("comma-joins multi-value array filters", () =>
+    expect(buildQS({ tags__id__all: [9, 6] })).toBe("?tags__id__all=9%2C6"));
+  it("comma-joins tags__id__in", () =>
+    expect(buildQS({ tags__id__in: [1, 2, 3] })).toBe("?tags__id__in=1%2C2%2C3"));
   it("comma-joins id__in", () => expect(buildQS({ id__in: [1, 2, 3] })).toBe("?id__in=1%2C2%2C3"));
   it("skips undefined and null", () =>
     expect(buildQS({ query: "x", a: undefined, b: null })).toBe("?query=x"));
