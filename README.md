@@ -96,7 +96,7 @@ This fetches `GET /api/schema/` and overwrites `paperless-openapi.yaml`. Run it 
 | Search              | `search_documents`, `search_autocomplete`                                                                                       |
 | Documents           | `list_documents`, `get_document`, `get_documents`, `download_document`, `update_document`, `delete_document`, `upload_document` |
 | Document details    | `get_document_metadata`, `get_document_suggestions`, `get_document_notes`, `add_document_note`, `delete_document_note`          |
-| Bulk operations     | `bulk_edit_documents`, `get_next_asn`                                                                                           |
+| Bulk operations     | `bulk_edit_documents`, `bulk_set_object_permissions`, `get_next_asn`                                                            |
 | Correspondents      | `list_correspondents`, `get_correspondent`, `create_correspondent`, `update_correspondent`, `delete_correspondent`              |
 | Document types      | `list_document_types`, `get_document_type`, `create_document_type`, `update_document_type`, `delete_document_type`              |
 | Tags                | `list_tags`, `get_tag`, `create_tag`, `update_tag`, `delete_tag`                                                                |
@@ -111,6 +111,8 @@ This fetches `GET /api/schema/` and overwrites `paperless-openapi.yaml`. Run it 
 > **Note:** `list_documents` and `search_documents` return document metadata only (no OCR text) to keep responses small. Use `get_document` (single) or `get_documents` (batch) to retrieve full content.
 >
 > Saved views, users/groups, and workflows support read + create + update only — no delete tools (use the Paperless web UI to delete). User management covers accounts and group membership; it does not set per-document permissions. Notes support add and delete only (no edit), so there is no note-editing tool.
+>
+> The `update_*` tools for tags, correspondents, document types, storage paths, saved views, and custom fields accept `owner` and `set_permissions` (`{ view, change }` → `{ users, groups }`) to share objects. `bulk_set_object_permissions` sets owner/permissions on many tags, correspondents, document types, or storage paths in one call (saved views and custom fields are not supported by the bulk endpoint — share those individually).
 
 ### Extended Tools
 

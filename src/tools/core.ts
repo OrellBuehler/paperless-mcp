@@ -4,6 +4,23 @@ import { readFile } from "node:fs/promises";
 import { buildQS, ok, err, summarizeDocs } from "../paperless/format.js";
 import type { PaperlessClient } from "../paperless/client.js";
 
+const permissionGrant = z.object({
+  users: z.array(z.number()).optional().describe("User IDs"),
+  groups: z.array(z.number()).optional().describe("Group IDs"),
+});
+const permissionMap = z.object({
+  view: permissionGrant.optional(),
+  change: permissionGrant.optional(),
+});
+const ownerField = z
+  .number()
+  .nullable()
+  .optional()
+  .describe("Owner user ID, or null to make it unowned (visible to everyone)");
+const setPermissionsField = permissionMap
+  .optional()
+  .describe("Grant view/change access: { view: { users, groups }, change: { users, groups } }");
+
 export function registerCoreTools(server: McpServer, client: PaperlessClient) {
   // --- System ---
 
@@ -339,6 +356,45 @@ export function registerCoreTools(server: McpServer, client: PaperlessClient) {
     },
   );
 
+  server.tool(
+    "bulk_set_object_permissions",
+    "Set owner and/or view/change permissions on many tags, correspondents, document types or storage paths at once (e.g. share a whole taxonomy with a household group). Saved views and custom fields are not supported here — update those individually with set_permissions.",
+    {
+      object_type: z.enum(["tags", "correspondents", "document_types", "storage_paths"]),
+      objects: z.array(z.number()).describe("IDs of the objects to update"),
+      owner: ownerField,
+      permissions: permissionMap
+        .optional()
+        .describe(
+          "Grant view/change access: { view: { users, groups }, change: { users, groups } }",
+        ),
+      merge: z
+        .boolean()
+        .optional()
+        .describe("Merge with existing permissions instead of replacing them (default false)"),
+    },
+    async ({ object_type, objects, owner, permissions, merge }) => {
+      try {
+        const body: Record<string, unknown> = {
+          objects,
+          object_type,
+          operation: "set_permissions",
+        };
+        if (owner !== undefined) body.owner = owner;
+        if (permissions !== undefined) body.permissions = permissions;
+        if (merge !== undefined) body.merge = merge;
+        return ok(
+          await client.fetch("/api/bulk_edit_objects/", {
+            method: "POST",
+            body: JSON.stringify(body),
+          }),
+        );
+      } catch (e) {
+        return err(e);
+      }
+    },
+  );
+
   server.tool("get_next_asn", "Get the next available archive serial number", {}, async () => {
     try {
       return ok(await client.fetch("/api/documents/next_asn/"));
@@ -418,6 +474,8 @@ export function registerCoreTools(server: McpServer, client: PaperlessClient) {
         .optional()
         .describe("1=any, 2=all, 3=literal, 4=regex, 5=fuzzy, 6=auto"),
       is_insensitive: z.boolean().optional(),
+      owner: ownerField,
+      set_permissions: setPermissionsField,
     },
     async ({ id, ...body }) => {
       try {
@@ -517,6 +575,8 @@ export function registerCoreTools(server: McpServer, client: PaperlessClient) {
         .optional()
         .describe("1=any, 2=all, 3=literal, 4=regex, 5=fuzzy, 6=auto"),
       is_insensitive: z.boolean().optional(),
+      owner: ownerField,
+      set_permissions: setPermissionsField,
     },
     async ({ id, ...body }) => {
       try {
@@ -616,6 +676,8 @@ export function registerCoreTools(server: McpServer, client: PaperlessClient) {
         .optional()
         .describe("1=any, 2=all, 3=literal, 4=regex, 5=fuzzy, 6=auto"),
       is_insensitive: z.boolean().optional(),
+      owner: ownerField,
+      set_permissions: setPermissionsField,
     },
     async ({ id, ...body }) => {
       try {
@@ -712,6 +774,8 @@ export function registerCoreTools(server: McpServer, client: PaperlessClient) {
       sort_field: z.string().optional(),
       sort_reverse: z.boolean().optional(),
       page_size: z.number().optional(),
+      owner: ownerField,
+      set_permissions: setPermissionsField,
     },
     async ({ id, ...body }) => {
       try {
@@ -799,6 +863,8 @@ export function registerCoreTools(server: McpServer, client: PaperlessClient) {
         .optional()
         .describe("1=any, 2=all, 3=literal, 4=regex, 5=fuzzy, 6=auto"),
       is_insensitive: z.boolean().optional(),
+      owner: ownerField,
+      set_permissions: setPermissionsField,
     },
     async ({ id, ...body }) => {
       try {
@@ -891,6 +957,8 @@ export function registerCoreTools(server: McpServer, client: PaperlessClient) {
       id: z.number(),
       name: z.string().optional(),
       extra_data: z.record(z.unknown()).optional(),
+      owner: ownerField,
+      set_permissions: setPermissionsField,
     },
     async ({ id, ...body }) => {
       try {

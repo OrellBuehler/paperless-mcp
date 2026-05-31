@@ -252,3 +252,100 @@ describe("document read tools", () => {
     expect(payload[0].content_length).toBe(10);
   });
 });
+
+describe("permission writes", () => {
+  let mockFetch: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    mockFetch = vi.fn();
+    vi.stubGlobal("fetch", mockFetch);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("update_tag forwards owner and set_permissions in the PATCH body", async () => {
+    mockFetch.mockResolvedValueOnce(mockJson({ id: 5 }));
+    await tools.get("update_tag")!({
+      id: 5,
+      owner: 2,
+      set_permissions: { view: { groups: [1] }, change: { groups: [1] } },
+    });
+    expect(mockFetch).toHaveBeenCalledWith(
+      "http://localhost:8000/api/tags/5/",
+      expect.objectContaining({
+        method: "PATCH",
+        body: JSON.stringify({
+          owner: 2,
+          set_permissions: { view: { groups: [1] }, change: { groups: [1] } },
+        }),
+      }),
+    );
+  });
+
+  it("update_storage_path forwards set_permissions", async () => {
+    mockFetch.mockResolvedValueOnce(mockJson({ id: 9 }));
+    await tools.get("update_storage_path")!({
+      id: 9,
+      set_permissions: { view: { groups: [1] }, change: { groups: [1] } },
+    });
+    expect(mockFetch).toHaveBeenCalledWith(
+      "http://localhost:8000/api/storage_paths/9/",
+      expect.objectContaining({
+        method: "PATCH",
+        body: JSON.stringify({
+          set_permissions: { view: { groups: [1] }, change: { groups: [1] } },
+        }),
+      }),
+    );
+  });
+
+  it("registers bulk_set_object_permissions", () => {
+    expect(tools.has("bulk_set_object_permissions")).toBe(true);
+  });
+
+  it("bulk_set_object_permissions POSTs a set_permissions operation", async () => {
+    mockFetch.mockResolvedValueOnce(mockJson({ result: "OK" }));
+    await tools.get("bulk_set_object_permissions")!({
+      object_type: "tags",
+      objects: [9, 6],
+      permissions: { view: { groups: [1] }, change: { groups: [1] } },
+      merge: true,
+    });
+    expect(mockFetch).toHaveBeenCalledWith(
+      "http://localhost:8000/api/bulk_edit_objects/",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          objects: [9, 6],
+          object_type: "tags",
+          operation: "set_permissions",
+          permissions: { view: { groups: [1] }, change: { groups: [1] } },
+          merge: true,
+        }),
+      }),
+    );
+  });
+
+  it("bulk_set_object_permissions can set owner only", async () => {
+    mockFetch.mockResolvedValueOnce(mockJson({ result: "OK" }));
+    await tools.get("bulk_set_object_permissions")!({
+      object_type: "correspondents",
+      objects: [3],
+      owner: 2,
+    });
+    expect(mockFetch).toHaveBeenCalledWith(
+      "http://localhost:8000/api/bulk_edit_objects/",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          objects: [3],
+          object_type: "correspondents",
+          operation: "set_permissions",
+          owner: 2,
+        }),
+      }),
+    );
+  });
+});
