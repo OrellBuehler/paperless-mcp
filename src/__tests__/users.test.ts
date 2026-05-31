@@ -40,8 +40,14 @@ describe("user & group tools", () => {
 
   it("registers all user and group tools", () => {
     for (const name of [
-      "list_users", "get_user", "create_user", "update_user",
-      "list_groups", "get_group", "create_group", "update_group",
+      "list_users",
+      "get_user",
+      "create_user",
+      "update_user",
+      "list_groups",
+      "get_group",
+      "create_group",
+      "update_group",
     ]) {
       expect(tools.has(name)).toBe(true);
     }
@@ -70,7 +76,10 @@ describe("user & group tools", () => {
 
   it("create_group POSTs name and permissions", async () => {
     mockFetch.mockResolvedValueOnce(mockJson({ id: 3 }));
-    await tools.get("create_group")!({ name: "household", permissions: ["documents.view_document"] });
+    await tools.get("create_group")!({
+      name: "household",
+      permissions: ["documents.view_document"],
+    });
     expect(mockFetch).toHaveBeenCalledWith(
       "http://localhost:8000/api/groups/",
       expect.objectContaining({

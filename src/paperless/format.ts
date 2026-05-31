@@ -5,7 +5,7 @@ export function buildQS(params: Record<string, unknown>): string {
     if (Array.isArray(v)) {
       if (v.length === 0) continue;
       if (k === "id__in") sp.set(k, v.join(","));
-      else v.forEach(item => sp.append(k, String(item)));
+      else v.forEach((item) => sp.append(k, String(item)));
     } else {
       sp.set(k, String(v));
     }

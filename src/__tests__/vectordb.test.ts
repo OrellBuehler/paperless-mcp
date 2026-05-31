@@ -32,10 +32,10 @@ describe("vectordb", () => {
     const db = getDb();
     expect(db).toBeDefined();
 
-    const tables = db.prepare(
-      "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
-    ).all() as { name: string }[];
-    const names = tables.map(t => t.name);
+    const tables = db
+      .prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
+      .all() as { name: string }[];
+    const names = tables.map((t) => t.name);
     expect(names).toContain("documents");
     expect(names).toContain("sync_state");
   });
@@ -84,7 +84,8 @@ describe("vectordb", () => {
   });
 
   it("removes document from index", async () => {
-    const { upsertDocument, removeDocument, getIndexedDocIds, getDocumentHash } = await import("../vectordb.js");
+    const { upsertDocument, removeDocument, getIndexedDocIds, getDocumentHash } =
+      await import("../vectordb.js");
 
     upsertDocument(1, "Doc 1", "h1", [0.1, 0.2, 0.3, 0.4]);
     upsertDocument(2, "Doc 2", "h2", [0.5, 0.6, 0.7, 0.8]);

@@ -34,12 +34,16 @@ export function getDb(): Database.Database {
     )
   `);
 
-  const storedDims = db.prepare("SELECT value FROM sync_state WHERE key = 'embedding_dimensions'").get() as { value: string } | undefined;
+  const storedDims = db
+    .prepare("SELECT value FROM sync_state WHERE key = 'embedding_dimensions'")
+    .get() as { value: string } | undefined;
   if (storedDims && parseInt(storedDims.value, 10) !== dims) {
     db.exec("DROP TABLE IF EXISTS vec_documents");
     db.exec("DELETE FROM documents");
     db.prepare("DELETE FROM sync_state WHERE key = 'embedding_dimensions'").run();
-    console.error(`Embedding dimensions changed from ${storedDims.value} to ${dims}. Vector index has been reset. Run sync_embeddings to re-index.`);
+    console.error(
+      `Embedding dimensions changed from ${storedDims.value} to ${dims}. Vector index has been reset. Run sync_embeddings to re-index.`,
+    );
   }
 
   db.exec(`
@@ -49,27 +53,39 @@ export function getDb(): Database.Database {
   `);
 
   if (!storedDims || parseInt(storedDims.value, 10) !== dims) {
-    db.prepare("INSERT OR REPLACE INTO sync_state (key, value) VALUES ('embedding_dimensions', ?)").run(String(dims));
+    db.prepare(
+      "INSERT OR REPLACE INTO sync_state (key, value) VALUES ('embedding_dimensions', ?)",
+    ).run(String(dims));
   }
 
   return db;
 }
 
-export function upsertDocument(id: number, title: string, contentHash: string, embedding: number[]) {
+export function upsertDocument(
+  id: number,
+  title: string,
+  contentHash: string,
+  embedding: number[],
+) {
   const d = getDb();
   const embBuf = Buffer.from(new Float32Array(embedding).buffer);
   const tx = d.transaction(() => {
-    const existing = d.prepare("SELECT content_hash FROM documents WHERE id = ?").get(id) as { content_hash: string } | undefined;
+    const existing = d.prepare("SELECT content_hash FROM documents WHERE id = ?").get(id) as
+      | { content_hash: string }
+      | undefined;
     if (existing) {
-      d.prepare("UPDATE documents SET title = ?, content_hash = ?, updated_at = ? WHERE id = ?")
-        .run(title, contentHash, new Date().toISOString(), id);
-      d.prepare("UPDATE vec_documents SET embedding = ? WHERE rowid = ?")
-        .run(embBuf, BigInt(id));
+      d.prepare(
+        "UPDATE documents SET title = ?, content_hash = ?, updated_at = ? WHERE id = ?",
+      ).run(title, contentHash, new Date().toISOString(), id);
+      d.prepare("UPDATE vec_documents SET embedding = ? WHERE rowid = ?").run(embBuf, BigInt(id));
     } else {
-      d.prepare("INSERT INTO documents (id, title, content_hash, updated_at) VALUES (?, ?, ?, ?)")
-        .run(id, title, contentHash, new Date().toISOString());
-      d.prepare("INSERT INTO vec_documents (rowid, embedding) VALUES (?, ?)")
-        .run(BigInt(id), embBuf);
+      d.prepare(
+        "INSERT INTO documents (id, title, content_hash, updated_at) VALUES (?, ?, ?, ?)",
+      ).run(id, title, contentHash, new Date().toISOString());
+      d.prepare("INSERT INTO vec_documents (rowid, embedding) VALUES (?, ?)").run(
+        BigInt(id),
+        embBuf,
+      );
     }
   });
   tx();
@@ -92,30 +108,38 @@ export interface SearchResult {
 
 export function searchSimilar(embedding: number[], limit: number = 10): SearchResult[] {
   const d = getDb();
-  const rows = d.prepare(`
+  const rows = d
+    .prepare(
+      `
     SELECT v.rowid as id, d.title, v.distance
     FROM vec_documents v
     JOIN documents d ON d.id = v.rowid
     WHERE v.embedding MATCH ? AND k = ?
     ORDER BY v.distance
-  `).all(Buffer.from(new Float32Array(embedding).buffer), limit) as SearchResult[];
+  `,
+    )
+    .all(Buffer.from(new Float32Array(embedding).buffer), limit) as SearchResult[];
   return rows;
 }
 
 export function getIndexedDocIds(): number[] {
   const d = getDb();
-  return (d.prepare("SELECT id FROM documents").all() as { id: number }[]).map(r => r.id);
+  return (d.prepare("SELECT id FROM documents").all() as { id: number }[]).map((r) => r.id);
 }
 
 export function getDocumentHash(id: number): string | undefined {
   const d = getDb();
-  const row = d.prepare("SELECT content_hash FROM documents WHERE id = ?").get(id) as { content_hash: string } | undefined;
+  const row = d.prepare("SELECT content_hash FROM documents WHERE id = ?").get(id) as
+    | { content_hash: string }
+    | undefined;
   return row?.content_hash;
 }
 
 export function getSyncState(key: string): string | undefined {
   const d = getDb();
-  const row = d.prepare("SELECT value FROM sync_state WHERE key = ?").get(key) as { value: string } | undefined;
+  const row = d.prepare("SELECT value FROM sync_state WHERE key = ?").get(key) as
+    | { value: string }
+    | undefined;
   return row?.value;
 }
 

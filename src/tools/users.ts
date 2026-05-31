@@ -15,8 +15,11 @@ export function registerUserTools(server: McpServer, client: PaperlessClient) {
       ordering: z.string().optional(),
     },
     async (params) => {
-      try { return ok(await client.fetch(`/api/users/${buildQS(params)}`)); }
-      catch (e) { return err(e); }
+      try {
+        return ok(await client.fetch(`/api/users/${buildQS(params)}`));
+      } catch (e) {
+        return err(e);
+      }
     },
   );
 
@@ -25,8 +28,11 @@ export function registerUserTools(server: McpServer, client: PaperlessClient) {
     "Get a single user by ID. Reveals the permission-string format used by user_permissions.",
     { id: z.number() },
     async ({ id }) => {
-      try { return ok(await client.fetch(`/api/users/${id}/`)); }
-      catch (e) { return err(e); }
+      try {
+        return ok(await client.fetch(`/api/users/${id}/`));
+      } catch (e) {
+        return err(e);
+      }
     },
   );
 
@@ -43,16 +49,24 @@ export function registerUserTools(server: McpServer, client: PaperlessClient) {
       is_staff: z.boolean().optional(),
       is_superuser: z.boolean().optional(),
       groups: z.array(z.number()).optional().describe("Group IDs"),
-      user_permissions: z.array(z.string()).optional()
-        .describe("Permission codenames like 'documents.view_document'. Call get_user/get_group to see valid strings."),
+      user_permissions: z
+        .array(z.string())
+        .optional()
+        .describe(
+          "Permission codenames like 'documents.view_document'. Call get_user/get_group to see valid strings.",
+        ),
     },
     async (body) => {
       try {
-        return ok(await client.fetch("/api/users/", {
-          method: "POST",
-          body: JSON.stringify(body),
-        }));
-      } catch (e) { return err(e); }
+        return ok(
+          await client.fetch("/api/users/", {
+            method: "POST",
+            body: JSON.stringify(body),
+          }),
+        );
+      } catch (e) {
+        return err(e);
+      }
     },
   );
 
@@ -74,11 +88,15 @@ export function registerUserTools(server: McpServer, client: PaperlessClient) {
     },
     async ({ id, ...body }) => {
       try {
-        return ok(await client.fetch(`/api/users/${id}/`, {
-          method: "PATCH",
-          body: JSON.stringify(body),
-        }));
-      } catch (e) { return err(e); }
+        return ok(
+          await client.fetch(`/api/users/${id}/`, {
+            method: "PATCH",
+            body: JSON.stringify(body),
+          }),
+        );
+      } catch (e) {
+        return err(e);
+      }
     },
   );
 
@@ -93,8 +111,11 @@ export function registerUserTools(server: McpServer, client: PaperlessClient) {
       ordering: z.string().optional(),
     },
     async (params) => {
-      try { return ok(await client.fetch(`/api/groups/${buildQS(params)}`)); }
-      catch (e) { return err(e); }
+      try {
+        return ok(await client.fetch(`/api/groups/${buildQS(params)}`));
+      } catch (e) {
+        return err(e);
+      }
     },
   );
 
@@ -103,8 +124,11 @@ export function registerUserTools(server: McpServer, client: PaperlessClient) {
     "Get a single group by ID. Reveals the permission-string format used by permissions.",
     { id: z.number() },
     async ({ id }) => {
-      try { return ok(await client.fetch(`/api/groups/${id}/`)); }
-      catch (e) { return err(e); }
+      try {
+        return ok(await client.fetch(`/api/groups/${id}/`));
+      } catch (e) {
+        return err(e);
+      }
     },
   );
 
@@ -113,16 +137,22 @@ export function registerUserTools(server: McpServer, client: PaperlessClient) {
     "Create a new group (requires Paperless admin privileges)",
     {
       name: z.string(),
-      permissions: z.array(z.string()).optional()
+      permissions: z
+        .array(z.string())
+        .optional()
         .describe("Permission codenames like 'documents.view_document'"),
     },
     async (body) => {
       try {
-        return ok(await client.fetch("/api/groups/", {
-          method: "POST",
-          body: JSON.stringify(body),
-        }));
-      } catch (e) { return err(e); }
+        return ok(
+          await client.fetch("/api/groups/", {
+            method: "POST",
+            body: JSON.stringify(body),
+          }),
+        );
+      } catch (e) {
+        return err(e);
+      }
     },
   );
 
@@ -136,11 +166,15 @@ export function registerUserTools(server: McpServer, client: PaperlessClient) {
     },
     async ({ id, ...body }) => {
       try {
-        return ok(await client.fetch(`/api/groups/${id}/`, {
-          method: "PATCH",
-          body: JSON.stringify(body),
-        }));
-      } catch (e) { return err(e); }
+        return ok(
+          await client.fetch(`/api/groups/${id}/`, {
+            method: "PATCH",
+            body: JSON.stringify(body),
+          }),
+        );
+      } catch (e) {
+        return err(e);
+      }
     },
   );
 }

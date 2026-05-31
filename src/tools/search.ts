@@ -5,7 +5,14 @@ import { ok, err, buildQS } from "../paperless/format.js";
 import type { PaperlessClient } from "../paperless/client.js";
 import { config, adminClient } from "../config.js";
 import { embed, embedSingle, getProviderInfo } from "../embeddings.js";
-import { upsertDocument, searchSimilar, getIndexedDocIds, getDocumentHash, getStats, removeDocument } from "../vectordb.js";
+import {
+  upsertDocument,
+  searchSimilar,
+  getIndexedDocIds,
+  getDocumentHash,
+  getStats,
+  removeDocument,
+} from "../vectordb.js";
 
 interface PaperlessDocument {
   id: number;
@@ -33,12 +40,19 @@ export function registerSearchTools(server: McpServer, client: PaperlessClient) 
         // cannot see, so permission filtering doesn't starve restricted users.
         const hits = searchSimilar(queryEmbedding, limitN * 5);
         if (hits.length === 0) return ok({ count: 0, results: [] });
-        const ids = hits.map(h => h.id);
-        const resp = await client.fetch(`/api/documents/${buildQS({ id__in: ids, page_size: ids.length })}`) as { results?: { id: number }[] };
-        const allowed = new Set((resp.results || []).map(d => d.id));
-        const results = hits.filter(h => allowed.has(h.id)).slice(0, limitN).map(h => ({ id: h.id, title: h.title, distance: h.distance }));
+        const ids = hits.map((h) => h.id);
+        const resp = (await client.fetch(
+          `/api/documents/${buildQS({ id__in: ids, page_size: ids.length })}`,
+        )) as { results?: { id: number }[] };
+        const allowed = new Set((resp.results || []).map((d) => d.id));
+        const results = hits
+          .filter((h) => allowed.has(h.id))
+          .slice(0, limitN)
+          .map((h) => ({ id: h.id, title: h.title, distance: h.distance }));
         return ok({ count: results.length, results });
-      } catch (e) { return err(e); }
+      } catch (e) {
+        return err(e);
+      }
     },
   );
 
@@ -60,7 +74,7 @@ export function registerSearchTools(server: McpServer, client: PaperlessClient) 
           const errors: string[] = [];
           const BATCH_SIZE = 20;
 
-          const currentIds = new Set(docs.map(d => d.id));
+          const currentIds = new Set(docs.map((d) => d.id));
           for (const id of indexedIds) {
             if (!currentIds.has(id)) {
               removeDocument(id);
@@ -76,7 +90,9 @@ export function registerSearchTools(server: McpServer, client: PaperlessClient) 
               try {
                 let content = doc.content;
                 if (!content) {
-                  const detail = await adminClient.fetch(`/api/documents/${doc.id}/`) as PaperlessDocument;
+                  const detail = (await adminClient.fetch(
+                    `/api/documents/${doc.id}/`,
+                  )) as PaperlessDocument;
                   content = detail.content;
                 }
                 if (!content) {
@@ -97,10 +113,15 @@ export function registerSearchTools(server: McpServer, client: PaperlessClient) 
             if (toEmbed.length === 0) continue;
 
             try {
-              const texts = toEmbed.map(t => `${t.doc.title}\n\n${t.content}`.slice(0, 8000));
+              const texts = toEmbed.map((t) => `${t.doc.title}\n\n${t.content}`.slice(0, 8000));
               const embeddings = await embed(texts);
               for (let j = 0; j < toEmbed.length; j++) {
-                upsertDocument(toEmbed[j].doc.id, toEmbed[j].doc.title, toEmbed[j].hash, embeddings[j]);
+                upsertDocument(
+                  toEmbed[j].doc.id,
+                  toEmbed[j].doc.title,
+                  toEmbed[j].hash,
+                  embeddings[j],
+                );
                 indexed++;
               }
             } catch (e) {
@@ -118,7 +139,9 @@ export function registerSearchTools(server: McpServer, client: PaperlessClient) 
             db_path: stats.db_path,
             errors: errors.length > 0 ? errors : undefined,
           });
-        } catch (e) { return err(e); }
+        } catch (e) {
+          return err(e);
+        }
       },
     );
   }
@@ -133,7 +156,9 @@ export function registerSearchTools(server: McpServer, client: PaperlessClient) 
         const provider = getProviderInfo();
         const isAdmin = client.token === config.adminToken;
         return ok({ ...stats, ...(isAdmin ? { db_path } : {}), ...provider });
-      } catch (e) { return err(e); }
+      } catch (e) {
+        return err(e);
+      }
     },
   );
 }

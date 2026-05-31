@@ -9,7 +9,10 @@ if (!baseUrl || !adminToken) {
 }
 
 function csv(value: string | undefined): string[] {
-  return (value || "").split(",").map(s => s.trim()).filter(Boolean);
+  return (value || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
 }
 
 export const config = {

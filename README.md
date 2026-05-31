@@ -68,22 +68,22 @@ claude mcp add paperless --scope user \
 
 ### Core API Tools
 
-| Category | Tools |
-|----------|-------|
-| Search | `search_documents`, `search_autocomplete` |
-| Documents | `list_documents`, `get_document`, `get_documents`, `download_document`, `update_document`, `delete_document`, `upload_document` |
-| Document details | `get_document_metadata`, `get_document_suggestions`, `get_document_notes`, `add_document_note`, `delete_document_note` |
-| Bulk operations | `bulk_edit_documents`, `get_next_asn` |
-| Correspondents | `list_correspondents`, `get_correspondent`, `create_correspondent`, `update_correspondent`, `delete_correspondent` |
-| Document types | `list_document_types`, `get_document_type`, `create_document_type`, `update_document_type`, `delete_document_type` |
-| Tags | `list_tags`, `get_tag`, `create_tag`, `update_tag`, `delete_tag` |
-| Saved views | `list_saved_views`, `get_saved_view`, `create_saved_view`, `update_saved_view` |
-| Storage paths | `list_storage_paths`, `get_storage_path`, `create_storage_path`, `update_storage_path` |
-| Custom fields | `list_custom_fields`, `get_custom_field`, `create_custom_field`, `update_custom_field` |
-| Users | `list_users`, `get_user`, `create_user`, `update_user` |
-| Groups | `list_groups`, `get_group`, `create_group`, `update_group` |
-| Paperless workflows | `list_workflows`, `get_workflow`, `create_workflow`, `update_workflow` |
-| System | `get_status`, `get_statistics`, `list_tasks` |
+| Category            | Tools                                                                                                                           |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| Search              | `search_documents`, `search_autocomplete`                                                                                       |
+| Documents           | `list_documents`, `get_document`, `get_documents`, `download_document`, `update_document`, `delete_document`, `upload_document` |
+| Document details    | `get_document_metadata`, `get_document_suggestions`, `get_document_notes`, `add_document_note`, `delete_document_note`          |
+| Bulk operations     | `bulk_edit_documents`, `get_next_asn`                                                                                           |
+| Correspondents      | `list_correspondents`, `get_correspondent`, `create_correspondent`, `update_correspondent`, `delete_correspondent`              |
+| Document types      | `list_document_types`, `get_document_type`, `create_document_type`, `update_document_type`, `delete_document_type`              |
+| Tags                | `list_tags`, `get_tag`, `create_tag`, `update_tag`, `delete_tag`                                                                |
+| Saved views         | `list_saved_views`, `get_saved_view`, `create_saved_view`, `update_saved_view`                                                  |
+| Storage paths       | `list_storage_paths`, `get_storage_path`, `create_storage_path`, `update_storage_path`                                          |
+| Custom fields       | `list_custom_fields`, `get_custom_field`, `create_custom_field`, `update_custom_field`                                          |
+| Users               | `list_users`, `get_user`, `create_user`, `update_user`                                                                          |
+| Groups              | `list_groups`, `get_group`, `create_group`, `update_group`                                                                      |
+| Paperless workflows | `list_workflows`, `get_workflow`, `create_workflow`, `update_workflow`                                                          |
+| System              | `get_status`, `get_statistics`, `list_tasks`                                                                                    |
 
 > **Note:** `list_documents` and `search_documents` return document metadata only (no OCR text) to keep responses small. Use `get_document` (single) or `get_documents` (batch) to retrieve full content.
 >
@@ -91,30 +91,30 @@ claude mcp add paperless --scope user \
 
 ### Extended Tools
 
-| Category | Tools | Description |
-|----------|-------|-------------|
-| Semantic search | `semantic_search`, `sync_embeddings`, `embedding_status` | Vector similarity search using local sqlite-vec database |
-| Content | `get_document_content` | Extract OCR'd text content from documents |
-| Workflows | `auto_classify_document`, `process_inbox`, `bulk_tag_by_content` | AI-assisted classification and bulk operations |
-| Helpers | `get_documents_by_correspondent`, `monthly_summary`, `upload_from_url` | Convenience tools for common workflows |
+| Category        | Tools                                                                  | Description                                              |
+| --------------- | ---------------------------------------------------------------------- | -------------------------------------------------------- |
+| Semantic search | `semantic_search`, `sync_embeddings`, `embedding_status`               | Vector similarity search using local sqlite-vec database |
+| Content         | `get_document_content`                                                 | Extract OCR'd text content from documents                |
+| Workflows       | `auto_classify_document`, `process_inbox`, `bulk_tag_by_content`       | AI-assisted classification and bulk operations           |
+| Helpers         | `get_documents_by_correspondent`, `monthly_summary`, `upload_from_url` | Convenience tools for common workflows                   |
 
 ## Environment Variables
 
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `PAPERLESS_URL` | Yes | Base URL of your Paperless-ngx instance |
-| `PAPERLESS_TOKEN` | Yes | API token. In `stdio` mode this is the user's token; in `http` mode it is the admin/indexer token (builds the shared embedding index and gates `sync_embeddings`) |
-| `MCP_TRANSPORT` | No | `stdio` (default) or `http` |
-| `PORT` | No | Port for the HTTP server (default: `3001`, http mode only) |
-| `EMBEDDINGS_ENABLED` | No | Set to `true` to enable semantic search tools (default: off) |
-| `MCP_ALLOWED_ORIGINS` | No | Comma-separated `Origin` allowlist for browser clients (http mode). Empty (default) blocks all cross-origin browser requests; use `*` to allow any |
-| `MCP_ALLOWED_HOSTS` | No | Comma-separated `Host` allowlist for DNS-rebinding protection (http mode). Empty (default) disables host validation |
-| `EMBEDDING_PROVIDER` | No | `openai` or `ollama` (default: `openai`) |
-| `OPENAI_API_KEY` | If using OpenAI | Required for OpenAI embeddings |
-| `OLLAMA_URL` | If using Ollama | Ollama server URL (default: `http://localhost:11434`) |
-| `EMBEDDING_MODEL` | No | Model name (defaults per provider) |
-| `EMBEDDING_DIMENSIONS` | No | Vector dimensions (defaults per provider) |
-| `PAPERLESS_MCP_DATA` | No | Directory for the vector DB (default: `~/.paperless-mcp`) |
+| Variable               | Required        | Description                                                                                                                                                       |
+| ---------------------- | --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PAPERLESS_URL`        | Yes             | Base URL of your Paperless-ngx instance                                                                                                                           |
+| `PAPERLESS_TOKEN`      | Yes             | API token. In `stdio` mode this is the user's token; in `http` mode it is the admin/indexer token (builds the shared embedding index and gates `sync_embeddings`) |
+| `MCP_TRANSPORT`        | No              | `stdio` (default) or `http`                                                                                                                                       |
+| `PORT`                 | No              | Port for the HTTP server (default: `3001`, http mode only)                                                                                                        |
+| `EMBEDDINGS_ENABLED`   | No              | Set to `true` to enable semantic search tools (default: off)                                                                                                      |
+| `MCP_ALLOWED_ORIGINS`  | No              | Comma-separated `Origin` allowlist for browser clients (http mode). Empty (default) blocks all cross-origin browser requests; use `*` to allow any                |
+| `MCP_ALLOWED_HOSTS`    | No              | Comma-separated `Host` allowlist for DNS-rebinding protection (http mode). Empty (default) disables host validation                                               |
+| `EMBEDDING_PROVIDER`   | No              | `openai` or `ollama` (default: `openai`)                                                                                                                          |
+| `OPENAI_API_KEY`       | If using OpenAI | Required for OpenAI embeddings                                                                                                                                    |
+| `OLLAMA_URL`           | If using Ollama | Ollama server URL (default: `http://localhost:11434`)                                                                                                             |
+| `EMBEDDING_MODEL`      | No              | Model name (defaults per provider)                                                                                                                                |
+| `EMBEDDING_DIMENSIONS` | No              | Vector dimensions (defaults per provider)                                                                                                                         |
+| `PAPERLESS_MCP_DATA`   | No              | Directory for the vector DB (default: `~/.paperless-mcp`)                                                                                                         |
 
 ## Transports
 
@@ -158,24 +158,24 @@ A `Dockerfile` is included. Add the server as a service next to your existing
 Paperless-ngx compose stack:
 
 ```yaml
-  paperless-mcp:
-    build: https://github.com/<you>/paperless-mcp.git
-    restart: unless-stopped
-    depends_on:
-      - webserver
-    ports:
-      - 3001:3001
-    volumes:
-      - /mnt/ssd/paperless_ngx/mcp:/data
-    environment:
-      MCP_TRANSPORT: http
-      PORT: 3001
-      PAPERLESS_URL: http://webserver:8000
-      PAPERLESS_TOKEN: <admin-token>
-      PAPERLESS_MCP_DATA: /data
-      EMBEDDINGS_ENABLED: "true"
-      EMBEDDING_PROVIDER: openai
-      OPENAI_API_KEY: <key>
+paperless-mcp:
+  build: https://github.com/<you>/paperless-mcp.git
+  restart: unless-stopped
+  depends_on:
+    - webserver
+  ports:
+    - 3001:3001
+  volumes:
+    - /mnt/ssd/paperless_ngx/mcp:/data
+  environment:
+    MCP_TRANSPORT: http
+    PORT: 3001
+    PAPERLESS_URL: http://webserver:8000
+    PAPERLESS_TOKEN: <admin-token>
+    PAPERLESS_MCP_DATA: /data
+    EMBEDDINGS_ENABLED: "true"
+    EMBEDDING_PROVIDER: openai
+    OPENAI_API_KEY: <key>
 ```
 
 LAN clients connect to `http://<host>:3001/mcp` with their own Paperless API

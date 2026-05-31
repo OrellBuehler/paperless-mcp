@@ -48,7 +48,13 @@ describe("workflow tools", () => {
     mockFetch.mockResolvedValueOnce(mockJson({ id: 1 }));
     const triggers = [{ type: 1, sources: [1], filter_filename: "*.pdf" }];
     const actions = [{ type: 1, assign_tags: [5] }];
-    await tools.get("create_workflow")!({ name: "Tag PDFs", order: 1, enabled: true, triggers, actions });
+    await tools.get("create_workflow")!({
+      name: "Tag PDFs",
+      order: 1,
+      enabled: true,
+      triggers,
+      actions,
+    });
     expect(mockFetch).toHaveBeenCalledWith(
       "http://localhost:8000/api/workflows/",
       expect.objectContaining({

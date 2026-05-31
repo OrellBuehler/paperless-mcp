@@ -33,15 +33,20 @@ export function registerHelperTools(server: McpServer, client: PaperlessClient) 
       try {
         let content = await client.getDocumentContent(id);
         if (!content) {
-          const doc = await client.fetch(`/api/documents/${id}/`) as { content: string };
+          const doc = (await client.fetch(`/api/documents/${id}/`)) as { content: string };
           content = doc.content || "";
         }
-        if (!content) return ok({ id, content: "", note: "No text content available for this document" });
+        if (!content)
+          return ok({ id, content: "", note: "No text content available for this document" });
         if (max_length && content.length > max_length) {
-          content = content.slice(0, max_length) + `\n\n[Truncated at ${max_length} characters, total: ${content.length}]`;
+          content =
+            content.slice(0, max_length) +
+            `\n\n[Truncated at ${max_length} characters, total: ${content.length}]`;
         }
         return ok({ id, length: content.length, content });
-      } catch (e) { return err(e); }
+      } catch (e) {
+        return err(e);
+      }
     },
   );
 
@@ -50,15 +55,24 @@ export function registerHelperTools(server: McpServer, client: PaperlessClient) 
     "Get full details (including OCR text content) for one or more documents by ID. Use this after list_documents/search_documents, which return metadata only.",
     {
       ids: z.array(z.number()).describe("Document IDs to fetch in full"),
-      max_content_length: z.number().optional().describe("Truncate each document's content to this many characters"),
+      max_content_length: z
+        .number()
+        .optional()
+        .describe("Truncate each document's content to this many characters"),
     },
     async ({ ids, max_content_length }) => {
       try {
         const docs = await Promise.all(
-          ids.map((id) => client.fetch(`/api/documents/${id}/`) as Promise<Record<string, unknown>>),
+          ids.map(
+            (id) => client.fetch(`/api/documents/${id}/`) as Promise<Record<string, unknown>>,
+          ),
         );
         const result = docs.map((doc) => {
-          if (max_content_length && typeof doc.content === "string" && doc.content.length > max_content_length) {
+          if (
+            max_content_length &&
+            typeof doc.content === "string" &&
+            doc.content.length > max_content_length
+          ) {
             return {
               ...doc,
               content: doc.content.slice(0, max_content_length),
@@ -69,7 +83,9 @@ export function registerHelperTools(server: McpServer, client: PaperlessClient) 
           return doc;
         });
         return ok(result);
-      } catch (e) { return err(e); }
+      } catch (e) {
+        return err(e);
+      }
     },
   );
 
@@ -83,25 +99,38 @@ export function registerHelperTools(server: McpServer, client: PaperlessClient) 
     },
     async ({ name, page, page_size }) => {
       try {
-        const corrs = await client.fetch(`/api/correspondents/${buildQS({ name__icontains: name })}`) as PaginatedResponse<Correspondent>;
+        const corrs = (await client.fetch(
+          `/api/correspondents/${buildQS({ name__icontains: name })}`,
+        )) as PaginatedResponse<Correspondent>;
         if (corrs.results.length === 0) {
           return ok({ query: name, message: "No correspondents found matching that name" });
         }
 
         const correspondent = corrs.results[0];
-        const docs = await client.fetch(`/api/documents/${buildQS({
-          correspondent__id: correspondent.id,
-          page: page || 1,
-          page_size: page_size || 25,
-          ordering: "-created",
-        })}`) as PaginatedResponse<Document>;
+        const docs = (await client.fetch(
+          `/api/documents/${buildQS({
+            correspondent__id: correspondent.id,
+            page: page || 1,
+            page_size: page_size || 25,
+            ordering: "-created",
+          })}`,
+        )) as PaginatedResponse<Document>;
 
         return ok({
-          correspondent: { id: correspondent.id, name: correspondent.name, document_count: correspondent.document_count },
-          other_matches: corrs.results.length > 1 ? corrs.results.slice(1).map(c => ({ id: c.id, name: c.name })) : undefined,
+          correspondent: {
+            id: correspondent.id,
+            name: correspondent.name,
+            document_count: correspondent.document_count,
+          },
+          other_matches:
+            corrs.results.length > 1
+              ? corrs.results.slice(1).map((c) => ({ id: c.id, name: c.name }))
+              : undefined,
           documents: docs,
         });
-      } catch (e) { return err(e); }
+      } catch (e) {
+        return err(e);
+      }
     },
   );
 
@@ -119,11 +148,13 @@ export function registerHelperTools(server: McpServer, client: PaperlessClient) 
         const endYear = month === 12 ? year + 1 : year;
         const endDate = `${endYear}-${String(endMonth).padStart(2, "0")}-01`;
 
-        const allDocs = await client.fetchAllPages<Document>(`/api/documents/${buildQS({
-          added__date__gte: startDate,
-          added__date__lt: endDate,
-          ordering: "-added",
-        })}`);
+        const allDocs = await client.fetchAllPages<Document>(
+          `/api/documents/${buildQS({
+            added__date__gte: startDate,
+            added__date__lt: endDate,
+            ordering: "-added",
+          })}`,
+        );
 
         const byType: Record<string, number> = {};
         const byCorrespondent: Record<string, number> = {};
@@ -139,7 +170,7 @@ export function registerHelperTools(server: McpServer, client: PaperlessClient) 
           total_added: allDocs.length,
           by_document_type_id: byType,
           by_correspondent_id: byCorrespondent,
-          documents: allDocs.map(d => ({
+          documents: allDocs.map((d) => ({
             id: d.id,
             title: d.title,
             created: d.created,
@@ -148,7 +179,9 @@ export function registerHelperTools(server: McpServer, client: PaperlessClient) 
             document_type: d.document_type,
           })),
         });
-      } catch (e) { return err(e); }
+      } catch (e) {
+        return err(e);
+      }
     },
   );
 
@@ -167,11 +200,14 @@ export function registerHelperTools(server: McpServer, client: PaperlessClient) 
       try {
         const parsed = new URL(url);
         if (!["http:", "https:"].includes(parsed.protocol)) {
-          throw new Error(`Unsupported URL scheme: ${parsed.protocol}. Only http and https are allowed.`);
+          throw new Error(
+            `Unsupported URL scheme: ${parsed.protocol}. Only http and https are allowed.`,
+          );
         }
         const MAX_DOWNLOAD_SIZE = 100 * 1024 * 1024; // 100 MB
         const fileRes = await fetch(url, { redirect: "error" });
-        if (!fileRes.ok) throw new Error(`Failed to download: ${fileRes.status} ${fileRes.statusText}`);
+        if (!fileRes.ok)
+          throw new Error(`Failed to download: ${fileRes.status} ${fileRes.statusText}`);
         const contentLength = parseInt(fileRes.headers.get("content-length") || "0", 10);
         if (contentLength > MAX_DOWNLOAD_SIZE) {
           throw new Error(`File too large: ${contentLength} bytes (max ${MAX_DOWNLOAD_SIZE})`);
@@ -191,18 +227,22 @@ export function registerHelperTools(server: McpServer, client: PaperlessClient) 
         if (correspondent !== undefined) form.append("correspondent", String(correspondent));
         if (document_type !== undefined) form.append("document_type", String(document_type));
         if (storage_path !== undefined) form.append("storage_path", String(storage_path));
-        if (tags) tags.forEach(t => form.append("tags", String(t)));
+        if (tags) tags.forEach((t) => form.append("tags", String(t)));
 
         const res = await client.upload("/api/documents/post_document/", form);
         if (!res.ok) throw new Error(`Upload failed: ${res.status}: ${await res.text()}`);
 
-        return ok(await res.json().catch(() => ({
-          status: "accepted",
-          task: res.headers.get("location"),
-          filename,
-          source_url: url,
-        })));
-      } catch (e) { return err(e); }
+        return ok(
+          await res.json().catch(() => ({
+            status: "accepted",
+            task: res.headers.get("location"),
+            filename,
+            source_url: url,
+          })),
+        );
+      } catch (e) {
+        return err(e);
+      }
     },
   );
 }
