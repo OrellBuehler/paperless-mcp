@@ -19,6 +19,7 @@
     "lint": "eslint src",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
+    "spec:update": "bash scripts/update-openapi.sh",
     "prepare": "npm run build"
   },
   "engines": {

@@ -75,6 +75,18 @@ claude mcp add paperless --scope user \
   -- node /path/to/paperless-mcp/dist/index.js
 ```
 
+### Regenerating the API spec
+
+`paperless-openapi.yaml` is the Paperless-ngx OpenAPI schema used as a reference when building tools. Pull a fresh copy straight from a running instance (no Docker needed):
+
+```bash
+PAPERLESS_URL=https://your-paperless-instance.example.com \
+PAPERLESS_TOKEN=your-api-token \
+npm run spec:update
+```
+
+This fetches `GET /api/schema/` and overwrites `paperless-openapi.yaml`. Run it whenever you upgrade Paperless-ngx.
+
 ## Available Tools
 
 ### Core API Tools

@@ -2,4 +2,4 @@ dist
 node_modules
 coverage
 package-lock.json
-Paperless-ngx REST API (9).yaml
+paperless-openapi.yaml
