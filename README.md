@@ -77,12 +77,17 @@ claude mcp add paperless --scope user \
 | Correspondents | `list_correspondents`, `get_correspondent`, `create_correspondent`, `update_correspondent`, `delete_correspondent` |
 | Document types | `list_document_types`, `get_document_type`, `create_document_type`, `update_document_type`, `delete_document_type` |
 | Tags | `list_tags`, `get_tag`, `create_tag`, `update_tag`, `delete_tag` |
-| Saved views | `list_saved_views`, `get_saved_view` |
+| Saved views | `list_saved_views`, `get_saved_view`, `create_saved_view`, `update_saved_view` |
 | Storage paths | `list_storage_paths`, `get_storage_path`, `create_storage_path`, `update_storage_path` |
 | Custom fields | `list_custom_fields`, `get_custom_field`, `create_custom_field`, `update_custom_field` |
+| Users | `list_users`, `get_user`, `create_user`, `update_user` |
+| Groups | `list_groups`, `get_group`, `create_group`, `update_group` |
+| Workflows | `list_workflows`, `get_workflow`, `create_workflow`, `update_workflow` |
 | System | `get_status`, `get_statistics`, `list_tasks` |
 
 > **Note:** `list_documents` and `search_documents` return document metadata only (no OCR text) to keep responses small. Use `get_document` (single) or `get_documents` (batch) to retrieve full content.
+>
+> Saved views, users/groups, and workflows support read + create + update only — no delete tools (use the Paperless web UI to delete). User management covers accounts and group membership; it does not set per-document permissions. Notes support add and delete only (no edit), so there is no note-editing tool.
 
 ### Extended Tools
 
