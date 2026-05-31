@@ -163,14 +163,28 @@ Browser-based clients are blocked unless you list their origin in
 `MCP_ALLOWED_ORIGINS`. If the server is reachable on a public hostname, set
 `MCP_ALLOWED_HOSTS` to the expected host(s) for DNS-rebinding protection.
 
-## Run as an HTTP sidecar (Docker Compose)
+## Run as an HTTP sidecar (Docker)
 
-A `Dockerfile` is included. Add the server as a service next to your existing
-Paperless-ngx compose stack:
+A prebuilt image is published to the GitHub Container Registry on every release
+and every push to `main`:
+
+```
+ghcr.io/orellbuehler/paperless-mcp:latest   # tracks main
+ghcr.io/orellbuehler/paperless-mcp:1         # latest 1.x release
+ghcr.io/orellbuehler/paperless-mcp:1.0.0     # exact version
+```
+
+Pull it directly:
+
+```bash
+docker pull ghcr.io/orellbuehler/paperless-mcp:latest
+```
+
+Add the server as a service next to your existing Paperless-ngx compose stack:
 
 ```yaml
 paperless-mcp:
-  build: https://github.com/<you>/paperless-mcp.git
+  image: ghcr.io/orellbuehler/paperless-mcp:latest
   restart: unless-stopped
   depends_on:
     - webserver
@@ -189,6 +203,18 @@ paperless-mcp:
     OPENAI_API_KEY: <key>
 ```
 
+The image already defaults to `MCP_TRANSPORT=http`, `PORT=3001`, and
+`PAPERLESS_MCP_DATA=/data`, so the only variables you must set are
+`PAPERLESS_URL` and `PAPERLESS_TOKEN` (plus `OPENAI_API_KEY` when semantic
+search is enabled). Mount a volume at `/data` to persist the embedding index
+across restarts.
+
 LAN clients connect to `http://<host>:3001/mcp` with their own Paperless API
 token. Run `sync_embeddings` once with the admin token to build the shared
 semantic index.
+
+To build the image yourself instead of pulling it, a `Dockerfile` is included:
+
+```bash
+docker build -t paperless-mcp .
+```
