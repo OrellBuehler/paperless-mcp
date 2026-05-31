@@ -19,7 +19,7 @@ const ownerField = z
   .describe("Owner user ID, or null to make it unowned (visible to everyone)");
 const setPermissionsField = permissionMap
   .optional()
-  .describe("Grant view/change access: { view: { users, groups }, change: { users, groups } }");
+  .describe("Grant view (read) and change (edit) access to users and groups");
 
 export function registerCoreTools(server: McpServer, client: PaperlessClient) {
   // --- System ---
@@ -363,11 +363,7 @@ export function registerCoreTools(server: McpServer, client: PaperlessClient) {
       object_type: z.enum(["tags", "correspondents", "document_types", "storage_paths"]),
       objects: z.array(z.number()).describe("IDs of the objects to update"),
       owner: ownerField,
-      permissions: permissionMap
-        .optional()
-        .describe(
-          "Grant view/change access: { view: { users, groups }, change: { users, groups } }",
-        ),
+      permissions: setPermissionsField,
       merge: z
         .boolean()
         .optional()
