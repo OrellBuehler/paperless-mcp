@@ -26,7 +26,7 @@ npx vitest run src/__tests__/core-tools.test.ts
 npx vitest run -t "update_correspondent PATCHes"
 ```
 
-CI (`.github/workflows/ci.yml`) runs `format:check`, `lint`, `typecheck`, and `test` in that order — all must pass. Run them locally before committing.
+CI (`.github/workflows/ci.yml`) runs `format:check`, `lint`, `typecheck`, and `test` in that order — all must pass. The same four gates run locally on every commit via [prek](https://github.com/j178/prek) pre-commit hooks (`.pre-commit-config.yaml`); run `prek install` once per clone to enable them. Bypass with `git commit --no-verify` if needed.
 
 ## Architecture
 

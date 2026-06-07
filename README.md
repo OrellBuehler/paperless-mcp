@@ -26,6 +26,12 @@ npm install
 npm run build
 ```
 
+Optionally enable the git pre-commit hooks, which run the same `format:check` / `lint` / `typecheck` / `test` gates as CI before each commit. They use [prek](https://github.com/j178/prek) (a fast, dependency-free pre-commit runner); install it, then activate the hooks once per clone:
+
+```bash
+prek install
+```
+
 ## Usage with Claude Code
 
 1. Get your API token from Paperless-ngx (Settings > Administration, or `POST /api/token/`)
