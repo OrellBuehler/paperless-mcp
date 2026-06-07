@@ -1,0 +1,29 @@
+# Managed by prek (https://github.com/j178/prek). Install hooks with: prek install
+# Mirrors the CI quality gates (.github/workflows/ci.yml) so commits are validated locally.
+repos:
+  - repo: local
+    hooks:
+      - id: format
+        name: prettier format check
+        entry: npm run format:check
+        language: system
+        pass_filenames: false
+        always_run: true
+      - id: lint
+        name: eslint
+        entry: npm run lint
+        language: system
+        pass_filenames: false
+        always_run: true
+      - id: typecheck
+        name: typecheck
+        entry: npm run typecheck
+        language: system
+        pass_filenames: false
+        always_run: true
+      - id: test
+        name: vitest
+        entry: npm test
+        language: system
+        pass_filenames: false
+        always_run: true
