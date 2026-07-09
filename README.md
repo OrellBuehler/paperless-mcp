@@ -1,10 +1,38 @@
 # paperless-mcp
 
-MCP server for [Paperless-ngx](https://docs.paperless-ngx.com/) that exposes the REST API as tools for AI agents. Includes optional semantic search via local vector embeddings.
+[![npm version](https://img.shields.io/npm/v/@orellbuehler/paperless-mcp)](https://www.npmjs.com/package/@orellbuehler/paperless-mcp)
+[![CI](https://github.com/OrellBuehler/paperless-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/OrellBuehler/paperless-mcp/actions/workflows/ci.yml)
+[![license](https://img.shields.io/npm/l/@orellbuehler/paperless-mcp)](LICENSE)
+[![node](https://img.shields.io/node/v/@orellbuehler/paperless-mcp)](package.json)
 
-## Install
+Connect AI agents to [Paperless-ngx](https://docs.paperless-ngx.com/). This [Model Context Protocol](https://modelcontextprotocol.io/) server exposes the Paperless-ngx REST API as 60+ tools, so assistants like Claude can search, upload, tag, and organize your documents — with optional semantic search over your whole archive using local vector embeddings.
 
-The package is published as [`@orellbuehler/paperless-mcp`](https://www.npmjs.com/package/@orellbuehler/paperless-mcp) and runs directly with `npx` — no clone or build needed:
+Works with any MCP client: Claude Code, Claude Desktop, or your own agent.
+
+## Highlights
+
+- **Full document management** — search, upload, download, update, and bulk-edit documents; manage tags, correspondents, document types, storage paths, custom fields, and saved views
+- **Semantic search (optional)** — vector similarity search with OpenAI or Ollama embeddings, stored locally in sqlite-vec; no external vector DB
+- **AI-assisted workflows** — auto-classify documents, process your inbox, bulk-tag by content
+- **Single- or multi-user** — stdio transport for personal use, or an HTTP transport where every user authenticates with their own Paperless token and only sees their own documents
+- **Docker-ready** — prebuilt image on GHCR, drop-in sidecar for your Paperless-ngx compose stack
+
+Things you can ask once it's connected:
+
+> "Find all invoices from my ISP in 2025 and tag them as telecom"
+>
+> "Upload this PDF, set the correspondent to my landlord, and file it as a contract"
+>
+> "Which documents in my inbox are missing a correspondent or document type?"
+>
+> "Find the document about the espresso machine warranty" _(semantic search — no keyword match needed)_
+
+## Quick start
+
+The package is published as [`@orellbuehler/paperless-mcp`](https://www.npmjs.com/package/@orellbuehler/paperless-mcp) and runs directly with `npx` — no clone or build needed.
+
+1. Get your API token from Paperless-ngx (Settings > Administration, or `POST /api/token/`)
+2. Register the server with your MCP client. With Claude Code:
 
 ```bash
 claude mcp add paperless \
@@ -13,30 +41,7 @@ claude mcp add paperless \
   -- npx -y @orellbuehler/paperless-mcp
 ```
 
-See [Usage with Claude Code](#usage-with-claude-code) for the equivalent JSON config.
-
-Semantic search is off by default. To enable it, set `EMBEDDINGS_ENABLED=true`; the `better-sqlite3` and `sqlite-vec` native modules are installed automatically as optional dependencies (this requires a build toolchain on your platform). The core document tools work without them.
-
-## Setup (from source)
-
-For local development, clone the repo and build the `dist/` output:
-
-```bash
-npm install
-npm run build
-```
-
-Optionally enable the git pre-commit hooks, which run the same `format:check` / `lint` / `typecheck` / `test` gates as CI before each commit. They use [prek](https://github.com/j178/prek) (a fast, dependency-free pre-commit runner); install it, then activate the hooks once per clone:
-
-```bash
-prek install
-```
-
-## Usage with Claude Code
-
-1. Get your API token from Paperless-ngx (Settings > Administration, or `POST /api/token/`)
-
-2. Set the environment variables by editing `~/.claude/settings.json`. Using the published package:
+Or as JSON config (Claude Desktop and most other MCP clients use the same shape):
 
 ```json
 {
@@ -53,45 +58,9 @@ prek install
 }
 ```
 
-If you built from source instead, use `"command": "node"` with `"args": ["/path/to/paperless-mcp/dist/index.js"]`. To enable semantic search, add `"EMBEDDINGS_ENABLED": "true"` (and `"OPENAI_API_KEY"` if using the OpenAI embedding provider).
+3. Restart your MCP client. The tools are available immediately.
 
-3. Restart Claude Code. The tools will be available immediately.
-
-4. If you enabled semantic search, run `sync_embeddings` to index your documents.
-
-## Updating
-
-The server runs from the compiled `dist/` output, so updating is just rebuild + restart — there's no need to re-run `claude mcp add` (the launch command and path don't change):
-
-```bash
-git pull          # if you track a remote
-npm install       # only if dependencies changed
-npm run build     # recompile src/ -> dist/
-```
-
-Then restart Claude Code (or your MCP client) so it re-spawns the server with the new build. Verify with `claude mcp list` (should show `paperless ✓ connected`) or run `/mcp` inside a session.
-
-To change connection settings (URL, token, embedding provider), edit the `env` block in your config, or re-register the server:
-
-```bash
-claude mcp remove paperless
-claude mcp add paperless --scope user \
-  --env PAPERLESS_URL=http://localhost:8000 \
-  --env PAPERLESS_TOKEN=your-api-token \
-  -- node /path/to/paperless-mcp/dist/index.js
-```
-
-### Regenerating the API spec
-
-`paperless-openapi.yaml` is the Paperless-ngx OpenAPI schema used as a reference when building tools. Pull a fresh copy straight from a running instance (no Docker needed):
-
-```bash
-PAPERLESS_URL=https://your-paperless-instance.example.com \
-PAPERLESS_TOKEN=your-api-token \
-npm run spec:update
-```
-
-This fetches `GET /api/schema/` and overwrites `paperless-openapi.yaml`. Run it whenever you upgrade Paperless-ngx.
+Semantic search is off by default. To enable it, add `"EMBEDDINGS_ENABLED": "true"` (and `"OPENAI_API_KEY"` if using the OpenAI embedding provider), then run `sync_embeddings` once to index your documents. The `better-sqlite3` and `sqlite-vec` native modules are installed automatically as optional dependencies (this requires a build toolchain on your platform); the core document tools work without them.
 
 ## Available Tools
 
@@ -238,3 +207,63 @@ To build the image yourself instead of pulling it, a `Dockerfile` is included:
 ```bash
 docker build -t paperless-mcp .
 ```
+
+## Development
+
+For local development, clone the repo and build the `dist/` output:
+
+```bash
+npm install
+npm run build
+npm test
+```
+
+To run your local build instead of the npm package, use `"command": "node"` with
+`"args": ["/path/to/paperless-mcp/dist/index.js"]` in your MCP config.
+
+Optionally enable the git pre-commit hooks, which run the same `format:check` /
+`lint` / `typecheck` / `test` gates as CI before each commit. They use
+[prek](https://github.com/j178/prek) (a fast, dependency-free pre-commit runner);
+install it, then activate the hooks once per clone:
+
+```bash
+prek install
+```
+
+### Updating a source install
+
+The server runs from the compiled `dist/` output, so updating is just rebuild + restart — there's no need to re-run `claude mcp add` (the launch command and path don't change):
+
+```bash
+git pull          # if you track a remote
+npm install       # only if dependencies changed
+npm run build     # recompile src/ -> dist/
+```
+
+Then restart your MCP client so it re-spawns the server with the new build. Verify with `claude mcp list` (should show `paperless ✓ connected`) or run `/mcp` inside a session.
+
+To change connection settings (URL, token, embedding provider), edit the `env` block in your config, or re-register the server:
+
+```bash
+claude mcp remove paperless
+claude mcp add paperless --scope user \
+  --env PAPERLESS_URL=http://localhost:8000 \
+  --env PAPERLESS_TOKEN=your-api-token \
+  -- node /path/to/paperless-mcp/dist/index.js
+```
+
+### Regenerating the API spec
+
+`paperless-openapi.yaml` is the Paperless-ngx OpenAPI schema used as a reference when building tools. Pull a fresh copy straight from a running instance (no Docker needed):
+
+```bash
+PAPERLESS_URL=https://your-paperless-instance.example.com \
+PAPERLESS_TOKEN=your-api-token \
+npm run spec:update
+```
+
+This fetches `GET /api/schema/` and overwrites `paperless-openapi.yaml`. Run it whenever you upgrade Paperless-ngx.
+
+## License
+
+[MIT](LICENSE)

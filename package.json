@@ -27,11 +27,16 @@
   },
   "keywords": [
     "mcp",
+    "mcp-server",
     "model-context-protocol",
     "paperless",
     "paperless-ngx",
+    "document-management",
+    "semantic-search",
+    "claude",
     "llm",
-    "ai"
+    "ai",
+    "ai-agents"
   ],
   "author": "Orell Bühler",
   "license": "MIT",
