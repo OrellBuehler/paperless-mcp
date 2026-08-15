@@ -126,4 +126,47 @@ describe("PaperlessClient.upload / download", () => {
     expect(res).toBe(fake);
     expect(fetchMock.mock.calls[0][0]).toBe("https://p.example.com/api/documents/1/download/");
   });
+  it("download forwards method and body for POST downloads", async () => {
+    fetchMock.mockResolvedValue({ ok: true, status: 200 });
+    await new PaperlessClient("https://p.example.com", "tok").download(
+      "/api/documents/bulk_download/",
+      { method: "POST", body: JSON.stringify({ documents: [1] }) },
+    );
+    const [, opts] = fetchMock.mock.calls[0];
+    expect(opts.method).toBe("POST");
+    expect((opts.headers as Record<string, string>)["Content-Type"]).toBe("application/json");
+  });
+});
+
+describe("API version pinning", () => {
+  it("pins the Accept header to v9 by default", async () => {
+    fetchMock.mockResolvedValue(jsonRes({}));
+    await new PaperlessClient("https://p.example.com", "tok").fetch("/api/tasks/");
+    expect((fetchMock.mock.calls[0][1].headers as Record<string, string>).Accept).toBe(
+      "application/json; version=9",
+    );
+  });
+  it("honours an explicit version", async () => {
+    fetchMock.mockResolvedValue(jsonRes({}));
+    await new PaperlessClient("https://p.example.com", "tok", "10").fetch("/api/tasks/");
+    expect((fetchMock.mock.calls[0][1].headers as Record<string, string>).Accept).toBe(
+      "application/json; version=10",
+    );
+  });
+  it("omits the Accept header when the version is empty", async () => {
+    fetchMock.mockResolvedValue(jsonRes({}));
+    await new PaperlessClient("https://p.example.com", "tok", "").fetch("/api/tasks/");
+    expect((fetchMock.mock.calls[0][1].headers as Record<string, string>).Accept).toBeUndefined();
+  });
+  it("pins the version on downloads and uploads too", async () => {
+    fetchMock.mockResolvedValue({ ok: true, status: 200 });
+    const c = new PaperlessClient("https://p.example.com", "tok");
+    await c.download("/api/documents/1/download/");
+    await c.upload("/api/documents/post_document/", new FormData());
+    for (const call of fetchMock.mock.calls) {
+      expect((call[1].headers as Record<string, string>).Accept).toBe(
+        "application/json; version=9",
+      );
+    }
+  });
 });

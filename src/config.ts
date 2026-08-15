@@ -15,9 +15,17 @@ function csv(value: string | undefined): string[] {
     .filter(Boolean);
 }
 
+function apiVersionFrom(value: string | undefined): string {
+  const raw = (value ?? "9").trim();
+  return /^(none|off|auto)$/i.test(raw) ? "" : raw;
+}
+
+const apiVersion = apiVersionFrom(process.env.PAPERLESS_API_VERSION);
+
 export const config = {
   baseUrl,
   adminToken,
+  apiVersion,
   transport: (process.env.MCP_TRANSPORT === "http" ? "http" : "stdio") as "http" | "stdio",
   port: parseInt(process.env.PORT || "3001", 10),
   embeddingsEnabled: /^(1|true|yes)$/i.test(process.env.EMBEDDINGS_ENABLED || ""),
@@ -25,7 +33,7 @@ export const config = {
   allowedHosts: csv(process.env.MCP_ALLOWED_HOSTS),
 };
 
-export const adminClient = new PaperlessClient(baseUrl, adminToken);
+export const adminClient = new PaperlessClient(baseUrl, adminToken, apiVersion);
 
 const clientCache = new Map<string, PaperlessClient>();
 const MAX_CACHE = 100;
@@ -38,7 +46,7 @@ export function clientFor(token: string): PaperlessClient {
     clientCache.set(token, existing);
     return existing;
   }
-  const client = new PaperlessClient(baseUrl, token);
+  const client = new PaperlessClient(baseUrl, token, apiVersion);
   if (clientCache.size >= MAX_CACHE) {
     const oldest = clientCache.keys().next().value;
     if (oldest !== undefined) clientCache.delete(oldest);

@@ -5,7 +5,7 @@
 [![license](https://img.shields.io/npm/l/@orellbuehler/paperless-mcp)](LICENSE)
 [![node](https://img.shields.io/node/v/@orellbuehler/paperless-mcp)](package.json)
 
-Connect AI agents to [Paperless-ngx](https://docs.paperless-ngx.com/). This [Model Context Protocol](https://modelcontextprotocol.io/) server exposes the Paperless-ngx REST API as 60+ tools, so assistants like Claude can search, upload, tag, and organize your documents — with optional semantic search over your whole archive using local vector embeddings.
+Connect AI agents to [Paperless-ngx](https://docs.paperless-ngx.com/). This [Model Context Protocol](https://modelcontextprotocol.io/) server exposes the Paperless-ngx REST API as 115+ tools, so assistants like Claude can search, upload, tag, and organize your documents — with optional semantic search over your whole archive using local vector embeddings.
 
 Works with any MCP client: Claude Code, Claude Desktop, or your own agent.
 
@@ -14,6 +14,8 @@ Works with any MCP client: Claude Code, Claude Desktop, or your own agent.
 - **Full document management** — search, upload, download, update, and bulk-edit documents; manage tags, correspondents, document types, storage paths, custom fields, and saved views
 - **Semantic search (optional)** — vector similarity search with OpenAI or Ollama embeddings, stored locally in sqlite-vec; no external vector DB
 - **AI-assisted workflows** — auto-classify documents, process your inbox, bulk-tag by content
+- **Mail, sharing, and trash** — configure mail accounts and rules, create public share links, email documents, and restore from the trash
+- **Paperless-ngx 3.0 ready** — document versions, PDF editing, share bundles, and task management, with the REST API version pinned so 2.x and 3.x both behave predictably
 - **Single- or multi-user** — stdio transport for personal use, or an HTTP transport where every user authenticates with their own Paperless token and only sees their own documents
 - **Docker-ready** — prebuilt image on GHCR, drop-in sidecar for your Paperless-ngx compose stack
 
@@ -66,22 +68,28 @@ Semantic search is off by default. To enable it, add `"EMBEDDINGS_ENABLED": "tru
 
 ### Core API Tools
 
-| Category            | Tools                                                                                                                           |
-| ------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| Search              | `search_documents`, `search_autocomplete`                                                                                       |
-| Documents           | `list_documents`, `get_document`, `get_documents`, `download_document`, `update_document`, `delete_document`, `upload_document` |
-| Document details    | `get_document_metadata`, `get_document_suggestions`, `get_document_notes`, `add_document_note`, `delete_document_note`          |
-| Bulk operations     | `bulk_edit_documents`, `bulk_set_object_permissions`, `get_next_asn`                                                            |
-| Correspondents      | `list_correspondents`, `get_correspondent`, `create_correspondent`, `update_correspondent`, `delete_correspondent`              |
-| Document types      | `list_document_types`, `get_document_type`, `create_document_type`, `update_document_type`, `delete_document_type`              |
-| Tags                | `list_tags`, `get_tag`, `create_tag`, `update_tag`, `delete_tag`                                                                |
-| Saved views         | `list_saved_views`, `get_saved_view`, `create_saved_view`, `update_saved_view`                                                  |
-| Storage paths       | `list_storage_paths`, `get_storage_path`, `create_storage_path`, `update_storage_path`                                          |
-| Custom fields       | `list_custom_fields`, `get_custom_field`, `create_custom_field`, `update_custom_field`                                          |
-| Users               | `list_users`, `get_user`, `create_user`, `update_user`                                                                          |
-| Groups              | `list_groups`, `get_group`, `create_group`, `update_group`                                                                      |
-| Paperless workflows | `list_workflows`, `get_workflow`, `create_workflow`, `update_workflow`                                                          |
-| System              | `get_status`, `get_statistics`, `list_tasks`                                                                                    |
+| Category            | Tools                                                                                                                                                                            |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Search              | `search_documents`, `search_autocomplete`                                                                                                                                        |
+| Documents           | `list_documents`, `get_document`, `get_documents`, `download_document`, `update_document`, `delete_document`, `upload_document`                                                  |
+| Document details    | `get_document_metadata`, `get_document_suggestions`, `get_document_notes`, `add_document_note`, `delete_document_note`, `get_document_history`                                   |
+| Bulk operations     | `bulk_edit_documents`, `bulk_set_object_permissions`, `get_next_asn`, `get_selection_data`, `bulk_download_documents`                                                            |
+| Storage path tools  | `test_storage_path`                                                                                                                                                              |
+| Correspondents      | `list_correspondents`, `get_correspondent`, `create_correspondent`, `update_correspondent`, `delete_correspondent`                                                               |
+| Document types      | `list_document_types`, `get_document_type`, `create_document_type`, `update_document_type`, `delete_document_type`                                                               |
+| Tags                | `list_tags`, `get_tag`, `create_tag`, `update_tag`, `delete_tag`                                                                                                                 |
+| Saved views         | `list_saved_views`, `get_saved_view`, `create_saved_view`, `update_saved_view`                                                                                                   |
+| Storage paths       | `list_storage_paths`, `get_storage_path`, `create_storage_path`, `update_storage_path`                                                                                           |
+| Custom fields       | `list_custom_fields`, `get_custom_field`, `create_custom_field`, `update_custom_field`                                                                                           |
+| Users               | `list_users`, `get_user`, `create_user`, `update_user`                                                                                                                           |
+| Groups              | `list_groups`, `get_group`, `create_group`, `update_group`                                                                                                                       |
+| Paperless workflows | `list_workflows`, `get_workflow`, `create_workflow`, `update_workflow`                                                                                                           |
+| Mail accounts       | `list_mail_accounts`, `get_mail_account`, `create_mail_account`, `update_mail_account`, `test_mail_account`, `process_mail_account`                                              |
+| Mail rules          | `list_mail_rules`, `get_mail_rule`, `create_mail_rule`, `update_mail_rule`, `list_processed_mail`                                                                                |
+| Sharing             | `list_share_links`, `get_share_link`, `create_share_link`, `get_document_share_links`                                                                                            |
+| Email               | `email_document`, `email_documents`                                                                                                                                              |
+| Trash               | `list_trash`, `restore_from_trash`, `empty_trash`                                                                                                                                |
+| System              | `get_status`, `get_statistics`, `list_tasks`, `acknowledge_tasks`, `get_config`, `update_config`, `get_ui_settings`, `get_profile`, `get_remote_version`, `list_logs`, `get_log` |
 
 > **Note:** `list_documents` and `search_documents` return document metadata only (no OCR text) to keep responses small. Use `get_document` (single) or `get_documents` (batch) to retrieve full content.
 >
@@ -98,23 +106,49 @@ Semantic search is off by default. To enable it, add `"EMBEDDINGS_ENABLED": "tru
 | Workflows       | `auto_classify_document`, `process_inbox`, `bulk_tag_by_content`       | AI-assisted classification and bulk operations           |
 | Helpers         | `get_documents_by_correspondent`, `monthly_summary`, `upload_from_url` | Convenience tools for common workflows                   |
 
+### Paperless-ngx 3.0+ Tools
+
+These call endpoints that only exist on Paperless-ngx 3.0 and later. On older servers they return a 404 error; everything else in the table above works on 2.x too.
+
+| Category          | Tools                                                                                                         |
+| ----------------- | ------------------------------------------------------------------------------------------------------------- |
+| Document versions | `upload_document_version`, `set_document_version_label`, `delete_document_version`, `get_document_root`       |
+| Document editing  | `rotate_documents`, `merge_documents`, `edit_pdf_document`, `remove_document_password`, `reprocess_documents` |
+| AI                | `get_document_ai_suggestions`                                                                                 |
+| Share bundles     | `list_share_link_bundles`, `get_share_link_bundle`, `create_share_link_bundle`, `rebuild_share_link_bundle`   |
+| Task management   | `run_task`, `get_task_summary`, `get_task_status_counts`, `get_active_tasks`                                  |
+
+> On Paperless-ngx 2.x, use `bulk_edit_documents` with `method: "rotate" | "merge" | "split"` instead of the dedicated document-editing tools. Both paths still work on 3.x.
+
+## API Versioning
+
+Paperless-ngx negotiates its REST API version through the `Accept` header. This server pins **API v9** by default, which is what every tool above is written against and what both 2.x and 3.x servers accept.
+
+This matters because Paperless-ngx 3.0 made v10 the server-side default. Sending no version header at all means a 3.x server answers with v10 shapes, which differ in ways that break clients written for v9:
+
+- `/api/tasks/` becomes paginated, and `task_name`/`type` are renamed to `task_type`/`trigger_source`
+- Saved views drop `show_on_dashboard` and `show_in_sidebar` (they move to UI settings), so `create_saved_view` would silently create views that never appear in the sidebar
+
+Set `PAPERLESS_API_VERSION=10` to opt into v10 once you are ready for those changes, or `PAPERLESS_API_VERSION=none` to send no header and let the server pick. Note that `create_saved_view` and `list_tasks` still assume v9 semantics.
+
 ## Environment Variables
 
-| Variable               | Required        | Description                                                                                                                                                       |
-| ---------------------- | --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `PAPERLESS_URL`        | Yes             | Base URL of your Paperless-ngx instance                                                                                                                           |
-| `PAPERLESS_TOKEN`      | Yes             | API token. In `stdio` mode this is the user's token; in `http` mode it is the admin/indexer token (builds the shared embedding index and gates `sync_embeddings`) |
-| `MCP_TRANSPORT`        | No              | `stdio` (default) or `http`                                                                                                                                       |
-| `PORT`                 | No              | Port for the HTTP server (default: `3001`, http mode only)                                                                                                        |
-| `EMBEDDINGS_ENABLED`   | No              | Set to `true` to enable semantic search tools (default: off)                                                                                                      |
-| `MCP_ALLOWED_ORIGINS`  | No              | Comma-separated `Origin` allowlist for browser clients (http mode). Empty (default) blocks all cross-origin browser requests; use `*` to allow any                |
-| `MCP_ALLOWED_HOSTS`    | No              | Comma-separated `Host` allowlist for DNS-rebinding protection (http mode). Empty (default) disables host validation                                               |
-| `EMBEDDING_PROVIDER`   | No              | `openai` or `ollama` (default: `openai`)                                                                                                                          |
-| `OPENAI_API_KEY`       | If using OpenAI | Required for OpenAI embeddings                                                                                                                                    |
-| `OLLAMA_URL`           | If using Ollama | Ollama server URL (default: `http://localhost:11434`)                                                                                                             |
-| `EMBEDDING_MODEL`      | No              | Model name (defaults per provider)                                                                                                                                |
-| `EMBEDDING_DIMENSIONS` | No              | Vector dimensions (defaults per provider)                                                                                                                         |
-| `PAPERLESS_MCP_DATA`   | No              | Directory for the vector DB (default: `~/.paperless-mcp`)                                                                                                         |
+| Variable                | Required        | Description                                                                                                                                                       |
+| ----------------------- | --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PAPERLESS_URL`         | Yes             | Base URL of your Paperless-ngx instance                                                                                                                           |
+| `PAPERLESS_TOKEN`       | Yes             | API token. In `stdio` mode this is the user's token; in `http` mode it is the admin/indexer token (builds the shared embedding index and gates `sync_embeddings`) |
+| `PAPERLESS_API_VERSION` | No              | Paperless REST API version to request (default: `9`). Set to `10` for Paperless-ngx 3.0+ v10 semantics, or `none` to send no version header                       |
+| `MCP_TRANSPORT`         | No              | `stdio` (default) or `http`                                                                                                                                       |
+| `PORT`                  | No              | Port for the HTTP server (default: `3001`, http mode only)                                                                                                        |
+| `EMBEDDINGS_ENABLED`    | No              | Set to `true` to enable semantic search tools (default: off)                                                                                                      |
+| `MCP_ALLOWED_ORIGINS`   | No              | Comma-separated `Origin` allowlist for browser clients (http mode). Empty (default) blocks all cross-origin browser requests; use `*` to allow any                |
+| `MCP_ALLOWED_HOSTS`     | No              | Comma-separated `Host` allowlist for DNS-rebinding protection (http mode). Empty (default) disables host validation                                               |
+| `EMBEDDING_PROVIDER`    | No              | `openai` or `ollama` (default: `openai`)                                                                                                                          |
+| `OPENAI_API_KEY`        | If using OpenAI | Required for OpenAI embeddings                                                                                                                                    |
+| `OLLAMA_URL`            | If using Ollama | Ollama server URL (default: `http://localhost:11434`)                                                                                                             |
+| `EMBEDDING_MODEL`       | No              | Model name (defaults per provider)                                                                                                                                |
+| `EMBEDDING_DIMENSIONS`  | No              | Vector dimensions (defaults per provider)                                                                                                                         |
+| `PAPERLESS_MCP_DATA`    | No              | Directory for the vector DB (default: `~/.paperless-mcp`)                                                                                                         |
 
 ## Transports
 

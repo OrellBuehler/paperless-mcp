@@ -3,17 +3,26 @@ import type { PaginatedResponse } from "./format.js";
 export class PaperlessClient {
   readonly baseUrl: string;
   readonly token: string;
+  readonly apiVersion: string;
 
-  constructor(baseUrl: string, token: string) {
+  constructor(baseUrl: string, token: string, apiVersion = "9") {
     this.baseUrl = baseUrl.replace(/\/+$/, "");
     this.token = token;
+    this.apiVersion = apiVersion;
+  }
+
+  private authHeaders(): Record<string, string> {
+    return {
+      Authorization: `Token ${this.token}`,
+      ...(this.apiVersion ? { Accept: `application/json; version=${this.apiVersion}` } : {}),
+    };
   }
 
   async fetch(path: string, options: RequestInit = {}): Promise<unknown> {
     const res = await fetch(`${this.baseUrl}${path}`, {
       ...options,
       headers: {
-        Authorization: `Token ${this.token}`,
+        ...this.authHeaders(),
         ...(options.body && typeof options.body === "string"
           ? { "Content-Type": "application/json" }
           : {}),
@@ -48,14 +57,23 @@ export class PaperlessClient {
     return doc.content || "";
   }
 
-  download(path: string): Promise<Response> {
-    return fetch(`${this.baseUrl}${path}`, { headers: { Authorization: `Token ${this.token}` } });
+  download(path: string, options: RequestInit = {}): Promise<Response> {
+    return fetch(`${this.baseUrl}${path}`, {
+      ...options,
+      headers: {
+        ...this.authHeaders(),
+        ...(options.body && typeof options.body === "string"
+          ? { "Content-Type": "application/json" }
+          : {}),
+        ...options.headers,
+      },
+    });
   }
 
-  upload(path: string, form: FormData): Promise<Response> {
+  upload(path: string, form: FormData, method = "POST"): Promise<Response> {
     return fetch(`${this.baseUrl}${path}`, {
-      method: "POST",
-      headers: { Authorization: `Token ${this.token}` },
+      method,
+      headers: this.authHeaders(),
       body: form,
     });
   }
