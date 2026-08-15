@@ -186,6 +186,86 @@ export function registerHelperTools(server: McpServer, client: PaperlessClient) 
   );
 
   server.tool(
+    "yearly_document_check",
+    "Compare documents of a year against the previous year, grouped by correspondent + document type. Lists combinations present last year but missing this year — useful for spotting missing recurring documents (salary certificate, bank tax statement, insurance summary) when preparing a tax report.",
+    {
+      year: z.number().describe("Year to check (e.g. 2025), compared against the previous year"),
+      tags__id__all: z
+        .array(z.number())
+        .optional()
+        .describe("Only consider documents with ALL these tags"),
+    },
+    async ({ year, tags__id__all }) => {
+      try {
+        const fetchYear = (y: number) =>
+          client.fetchAllPages<Document>(
+            `/api/documents/${buildQS({
+              created__date__gte: `${y}-01-01`,
+              created__date__lt: `${y + 1}-01-01`,
+              tags__id__all,
+            })}`,
+          );
+        const [current, previous, corrs, types] = await Promise.all([
+          fetchYear(year),
+          fetchYear(year - 1),
+          client.fetchAllPages<Correspondent>("/api/correspondents/"),
+          client.fetchAllPages<Correspondent>("/api/document_types/"),
+        ]);
+
+        const corrNames = new Map(corrs.map((c) => [c.id, c.name]));
+        const typeNames = new Map(types.map((t) => [t.id, t.name]));
+        const describe = (doc: Document) => ({
+          correspondent: doc.correspondent,
+          correspondent_name: doc.correspondent ? corrNames.get(doc.correspondent) : null,
+          document_type: doc.document_type,
+          document_type_name: doc.document_type ? typeNames.get(doc.document_type) : null,
+        });
+
+        const groupByCombo = (docs: Document[]) => {
+          const groups = new Map<
+            string,
+            ReturnType<typeof describe> & { count: number; titles: string[] }
+          >();
+          for (const doc of docs) {
+            const key = `${doc.correspondent ?? "none"}|${doc.document_type ?? "none"}`;
+            const group = groups.get(key);
+            if (group) {
+              group.count++;
+              if (group.titles.length < 3) group.titles.push(doc.title);
+            } else {
+              groups.set(key, { ...describe(doc), count: 1, titles: [doc.title] });
+            }
+          }
+          return groups;
+        };
+
+        const currentGroups = groupByCombo(current);
+        const previousGroups = groupByCombo(previous);
+        const missing = [...previousGroups.entries()]
+          .filter(([key]) => !currentGroups.has(key))
+          .map(([, { titles, ...group }]) => ({
+            ...group,
+            example_titles_from_previous_year: titles,
+          }));
+        const added = [...currentGroups.entries()]
+          .filter(([key]) => !previousGroups.has(key))
+          .map(([, { titles, ...group }]) => ({ ...group, example_titles: titles }));
+
+        return ok({
+          year,
+          previous_year: year - 1,
+          total_documents: { [year]: current.length, [year - 1]: previous.length },
+          missing_this_year: missing,
+          new_this_year: added,
+          combos_in_both: [...previousGroups.keys()].filter((k) => currentGroups.has(k)).length,
+        });
+      } catch (e) {
+        return err(e);
+      }
+    },
+  );
+
+  server.tool(
     "upload_from_url",
     "Download a file from a URL and upload it to Paperless-ngx",
     {
