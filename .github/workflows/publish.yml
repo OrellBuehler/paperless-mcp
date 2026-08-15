@@ -18,11 +18,11 @@ jobs:
           node-version: 22
           registry-url: https://registry.npmjs.org
           cache: npm
-      - name: Update npm for trusted publishing
-        run: npm install -g npm@latest
       - run: npm ci
       - run: npm run build
       - run: npm test
+      - name: Update npm for trusted publishing
+        run: npm install -g npm@latest
       - name: Check if version already published
         id: published
         run: |

@@ -71,8 +71,7 @@ export function upsertDocument(
   const embBuf = Buffer.from(new Float32Array(embedding).buffer);
   const tx = d.transaction(() => {
     const existing = d.prepare("SELECT content_hash FROM documents WHERE id = ?").get(id) as
-      | { content_hash: string }
-      | undefined;
+      { content_hash: string } | undefined;
     if (existing) {
       d.prepare(
         "UPDATE documents SET title = ?, content_hash = ?, updated_at = ? WHERE id = ?",
@@ -130,16 +129,14 @@ export function getIndexedDocIds(): number[] {
 export function getDocumentHash(id: number): string | undefined {
   const d = getDb();
   const row = d.prepare("SELECT content_hash FROM documents WHERE id = ?").get(id) as
-    | { content_hash: string }
-    | undefined;
+    { content_hash: string } | undefined;
   return row?.content_hash;
 }
 
 export function getSyncState(key: string): string | undefined {
   const d = getDb();
   const row = d.prepare("SELECT value FROM sync_state WHERE key = ?").get(key) as
-    | { value: string }
-    | undefined;
+    { value: string } | undefined;
   return row?.value;
 }
 
