@@ -9,6 +9,24 @@ vi.stubEnv("EMBEDDING_PROVIDER", "openai");
 vi.stubEnv("EMBEDDING_DIMENSIONS", "4");
 vi.stubEnv("OPENAI_API_KEY", "sk-test");
 
+// better-sqlite3 and sqlite-vec are optionalDependencies: they need a build
+// toolchain or a matching prebuilt binary, and npm skips them silently when
+// neither is available. Skip rather than fail so `npm test` still passes on
+// installs without them, which the README documents as supported.
+const nativeAvailable = await (async () => {
+  try {
+    const { default: Database } = await import("better-sqlite3");
+    new Database(":memory:").close();
+    return true;
+  } catch {
+    return false;
+  }
+})();
+
+if (!nativeAvailable) {
+  console.warn("skipping vectordb tests: better-sqlite3 native bindings unavailable");
+}
+
 let tempDir: string;
 
 beforeEach(() => {
@@ -26,7 +44,7 @@ afterEach(() => {
   }
 });
 
-describe("vectordb", () => {
+describe.skipIf(!nativeAvailable)("vectordb", () => {
   it("initializes database and creates tables", async () => {
     const { getDb } = await import("../vectordb.js");
     const db = getDb();
@@ -155,7 +173,7 @@ describe("vectordb", () => {
   });
 });
 
-describe("vectordb dimension change", () => {
+describe.skipIf(!nativeAvailable)("vectordb dimension change", () => {
   it("resets index when dimensions change", async () => {
     const { upsertDocument, getIndexedDocIds, getDb } = await import("../vectordb.js");
     upsertDocument(1, "Doc", "h1", [0.1, 0.2, 0.3, 0.4]);
