@@ -1,7 +1,9 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { readFile, writeFile } from "node:fs/promises";
-import { ok, err } from "../paperless/format.js";
+import { PDFDocument } from "pdf-lib";
+import { extractText } from "unpdf";
+import { ok, err, buildQS } from "../paperless/format.js";
 import type { PaperlessClient } from "../paperless/client.js";
 
 const docSelection = {
@@ -164,6 +166,81 @@ export function registerDocumentTools(server: McpServer, client: PaperlessClient
         const buf = Buffer.from(await res.arrayBuffer());
         await writeFile(output_path, buf);
         return ok({ path: output_path, bytes: buf.byteLength, documents: documents.length });
+      } catch (e) {
+        return err(e);
+      }
+    },
+  );
+
+  server.tool(
+    "extract_document_pages",
+    "Extract pages from a document's PDF into a new PDF written to disk. Processes the file locally; the document in Paperless is not modified.",
+    {
+      id: z.number().describe("Document ID"),
+      pages: z.array(z.number()).min(1).describe("1-based page numbers, kept in the given order"),
+      output_path: z.string().describe("Absolute path to write the extracted .pdf to"),
+      original: z
+        .boolean()
+        .optional()
+        .describe("Use the original file instead of the archived version"),
+    },
+    async ({ id, pages, output_path, original }) => {
+      try {
+        const res = await client.download(`/api/documents/${id}/download/${buildQS({ original })}`);
+        if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+        const ct = res.headers.get("content-type") || "";
+        if (!ct.includes("pdf")) throw new Error(`document is not a PDF (content-type: ${ct})`);
+        const src = await PDFDocument.load(await res.arrayBuffer());
+        const total = src.getPageCount();
+        const outOfRange = pages.filter((p) => p < 1 || p > total);
+        if (outOfRange.length)
+          throw new Error(
+            `pages out of range: ${outOfRange.join(", ")} (document has ${total} pages)`,
+          );
+        const out = await PDFDocument.create();
+        const copied = await out.copyPages(
+          src,
+          pages.map((p) => p - 1),
+        );
+        for (const page of copied) out.addPage(page);
+        const bytes = await out.save();
+        await writeFile(output_path, bytes);
+        return ok({ path: output_path, pages, total_pages: total, bytes: bytes.byteLength });
+      } catch (e) {
+        return err(e);
+      }
+    },
+  );
+
+  server.tool(
+    "find_document_pages",
+    "Find which pages of a document's PDF contain a text snippet. Searches the PDF text layer locally (scanned documents need an OCR'd archive version). Pair with extract_document_pages to pull out the matching pages.",
+    {
+      id: z.number().describe("Document ID"),
+      query: z.string().describe("Text to search for (case-insensitive)"),
+      original: z
+        .boolean()
+        .optional()
+        .describe("Search the original file instead of the archived version"),
+    },
+    async ({ id, query, original }) => {
+      try {
+        const res = await client.download(`/api/documents/${id}/download/${buildQS({ original })}`);
+        if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+        const ct = res.headers.get("content-type") || "";
+        if (!ct.includes("pdf")) throw new Error(`document is not a PDF (content-type: ${ct})`);
+        const { totalPages, text } = await extractText(new Uint8Array(await res.arrayBuffer()));
+        const normalize = (s: string) => s.replace(/\s+/g, " ").toLowerCase();
+        const needle = normalize(query);
+        const matches = text.flatMap((pageText, i) => {
+          const hay = normalize(pageText);
+          const idx = hay.indexOf(needle);
+          if (idx === -1) return [];
+          const start = Math.max(0, idx - 80);
+          const snippet = hay.slice(start, idx + needle.length + 80).trim();
+          return [{ page: i + 1, snippet }];
+        });
+        return ok({ query, total_pages: totalPages, matches });
       } catch (e) {
         return err(e);
       }
