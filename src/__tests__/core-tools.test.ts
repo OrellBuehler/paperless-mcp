@@ -349,3 +349,120 @@ describe("permission writes", () => {
     );
   });
 });
+
+describe("tax-report filters and helpers", () => {
+  let mockFetch: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    mockFetch = vi.fn();
+    vi.stubGlobal("fetch", mockFetch);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("list_documents forwards custom_field_query, inclusive date and __in filters", async () => {
+    mockFetch.mockResolvedValueOnce(mockJson({ count: 0, next: null, results: [] }));
+    await tools.get("list_documents")!({
+      custom_field_query: '["Betrag", "gt", 100]',
+      created__date__gte: "2025-01-01",
+      created__date__lte: "2025-12-31",
+      correspondent__id__in: [1, 2],
+      document_type__id__in: [10, 11],
+    });
+    const url = new URL(mockFetch.mock.calls[0][0] as string);
+    expect(url.searchParams.get("custom_field_query")).toBe('["Betrag", "gt", 100]');
+    expect(url.searchParams.get("created__date__gte")).toBe("2025-01-01");
+    expect(url.searchParams.get("created__date__lte")).toBe("2025-12-31");
+    expect(url.searchParams.get("correspondent__id__in")).toBe("1,2");
+    expect(url.searchParams.get("document_type__id__in")).toBe("10,11");
+  });
+
+  it("yearly_document_check reports combos missing versus the previous year", async () => {
+    mockFetch.mockImplementation((input: string) => {
+      const url = new URL(input);
+      if (url.pathname === "/api/correspondents/") {
+        return Promise.resolve(
+          mockJson({
+            count: 2,
+            next: null,
+            results: [
+              { id: 1, name: "Employer" },
+              { id: 2, name: "Bank" },
+            ],
+          }),
+        );
+      }
+      if (url.pathname === "/api/document_types/") {
+        return Promise.resolve(
+          mockJson({
+            count: 2,
+            next: null,
+            results: [
+              { id: 10, name: "Lohnausweis" },
+              { id: 11, name: "Steuerauszug" },
+            ],
+          }),
+        );
+      }
+      if (url.searchParams.get("created__date__gte") === "2025-01-01") {
+        return Promise.resolve(
+          mockJson({
+            count: 1,
+            next: null,
+            results: [{ id: 100, title: "Lohnausweis 2025", correspondent: 1, document_type: 10 }],
+          }),
+        );
+      }
+      return Promise.resolve(
+        mockJson({
+          count: 2,
+          next: null,
+          results: [
+            { id: 90, title: "Lohnausweis 2024", correspondent: 1, document_type: 10 },
+            { id: 91, title: "Steuerauszug 2024", correspondent: 2, document_type: 11 },
+          ],
+        }),
+      );
+    });
+
+    const res = await tools.get("yearly_document_check")!({ year: 2025 });
+    const payload = JSON.parse(res.content[0].text);
+    expect(payload.total_documents).toEqual({ "2025": 1, "2024": 2 });
+    expect(payload.missing_this_year).toEqual([
+      {
+        correspondent: 2,
+        correspondent_name: "Bank",
+        document_type: 11,
+        document_type_name: "Steuerauszug",
+        count: 1,
+        example_titles_from_previous_year: ["Steuerauszug 2024"],
+      },
+    ]);
+    expect(payload.new_this_year).toEqual([]);
+    expect(payload.combos_in_both).toBe(1);
+
+    const docCalls = mockFetch.mock.calls
+      .map((c) => new URL(c[0] as string))
+      .filter((u) => u.pathname === "/api/documents/");
+    expect(docCalls.some((u) => u.searchParams.get("created__date__lt") === "2026-01-01")).toBe(
+      true,
+    );
+    expect(docCalls.some((u) => u.searchParams.get("created__date__gte") === "2024-01-01")).toBe(
+      true,
+    );
+  });
+
+  it("yearly_document_check scopes both years to the given tags", async () => {
+    mockFetch.mockImplementation((input: string) => {
+      const url = new URL(input);
+      if (url.pathname === "/api/documents/") {
+        expect(url.searchParams.get("tags__id__all")).toBe("5,6");
+      }
+      return Promise.resolve(mockJson({ count: 0, next: null, results: [] }));
+    });
+    const res = await tools.get("yearly_document_check")!({ year: 2025, tags__id__all: [5, 6] });
+    expect(res.isError).toBeFalsy();
+  });
+});

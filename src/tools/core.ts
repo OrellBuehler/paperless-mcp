@@ -98,15 +98,42 @@ export function registerCoreTools(server: McpServer, client: PaperlessClient) {
       query: z.string().optional().describe("Full-text search query"),
       title__icontains: z.string().optional(),
       correspondent__id: z.number().optional(),
+      correspondent__id__in: z
+        .array(z.number())
+        .optional()
+        .describe("Must have one of these correspondents"),
       document_type__id: z.number().optional(),
+      document_type__id__in: z
+        .array(z.number())
+        .optional()
+        .describe("Must have one of these document types"),
       storage_path__id: z.number().optional(),
       tags__id__all: z.array(z.number()).optional().describe("Must have ALL these tags"),
       tags__id__in: z.array(z.number()).optional().describe("Must have at least one of these tags"),
       is_in_inbox: z.boolean().optional(),
-      created__date__gt: z.string().optional().describe("Created after (YYYY-MM-DD)"),
-      created__date__lt: z.string().optional().describe("Created before (YYYY-MM-DD)"),
-      added__date__gt: z.string().optional().describe("Added after (YYYY-MM-DD)"),
-      added__date__lt: z.string().optional().describe("Added before (YYYY-MM-DD)"),
+      created__date__gt: z.string().optional().describe("Created after (YYYY-MM-DD), exclusive"),
+      created__date__gte: z
+        .string()
+        .optional()
+        .describe("Created on or after (YYYY-MM-DD), inclusive"),
+      created__date__lt: z.string().optional().describe("Created before (YYYY-MM-DD), exclusive"),
+      created__date__lte: z
+        .string()
+        .optional()
+        .describe("Created on or before (YYYY-MM-DD), inclusive"),
+      added__date__gt: z.string().optional().describe("Added after (YYYY-MM-DD), exclusive"),
+      added__date__gte: z.string().optional().describe("Added on or after (YYYY-MM-DD), inclusive"),
+      added__date__lt: z.string().optional().describe("Added before (YYYY-MM-DD), exclusive"),
+      added__date__lte: z
+        .string()
+        .optional()
+        .describe("Added on or before (YYYY-MM-DD), inclusive"),
+      custom_field_query: z
+        .string()
+        .optional()
+        .describe(
+          'JSON custom field query expression, e.g. ["Betrag", "gt", 100] or ["AND", [["Steuerjahr", "exact", "2025"], ["Betrag", "exists", true]]]',
+        ),
       ordering: z.string().optional().describe("Field to order by, prefix with - for descending"),
     },
     async (params) => {

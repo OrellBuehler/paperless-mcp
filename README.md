@@ -95,19 +95,21 @@ Semantic search is off by default. To enable it, add `"EMBEDDINGS_ENABLED": "tru
 
 > **Note:** `list_documents` and `search_documents` return document metadata only (no OCR text) to keep responses small. Use `get_document` (single) or `get_documents` (batch) to retrieve full content.
 >
+> `list_documents` supports inclusive and exclusive date ranges (`created`/`added` `__date__gt|gte|lt|lte`), multi-value filters (`correspondent__id__in`, `document_type__id__in`, `tags__id__in|all`), and `custom_field_query` (JSON expressions like `["Amount", "gt", 100]`) for filtering by custom field values. `yearly_document_check` compares a year against the previous one per correspondent + document type — useful for spotting missing recurring documents (e.g. when preparing a tax report).
+>
 > Saved views, users/groups, and workflows support read + create + update only — no delete tools (use the Paperless web UI to delete). User management covers accounts and group membership; it does not set per-document permissions. Notes support add and delete only (no edit), so there is no note-editing tool.
 >
 > The `update_*` tools for tags, correspondents, document types, storage paths, saved views, and custom fields accept `owner` and `set_permissions` (`{ view, change }` → `{ users, groups }`) to share objects. `bulk_set_object_permissions` sets owner/permissions on many tags, correspondents, document types, or storage paths in one call (saved views and custom fields are not supported by the bulk endpoint — share those individually).
 
 ### Extended Tools
 
-| Category        | Tools                                                                  | Description                                                                                                                                    |
-| --------------- | ---------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| Semantic search | `semantic_search`, `sync_embeddings`, `embedding_status`               | Vector similarity search using local sqlite-vec database                                                                                       |
-| Content         | `get_document_content`                                                 | Extract OCR'd text content from documents                                                                                                      |
-| Workflows       | `auto_classify_document`, `process_inbox`, `bulk_tag_by_content`       | AI-assisted classification and bulk operations                                                                                                 |
-| Helpers         | `get_documents_by_correspondent`, `monthly_summary`, `upload_from_url` | Convenience tools for common workflows                                                                                                         |
-| PDF pages       | `extract_document_pages`, `find_document_pages`                        | Extract pages into a new PDF file or find the pages containing a text snippet — processed locally, without modifying the document in Paperless |
+| Category        | Tools                                                                                           | Description                                                                                                                                    |
+| --------------- | ----------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| Semantic search | `semantic_search`, `sync_embeddings`, `embedding_status`                                        | Vector similarity search using local sqlite-vec database                                                                                       |
+| Content         | `get_document_content`                                                                          | Extract OCR'd text content from documents                                                                                                      |
+| Workflows       | `auto_classify_document`, `process_inbox`, `bulk_tag_by_content`                                | AI-assisted classification and bulk operations                                                                                                 |
+| Helpers         | `get_documents_by_correspondent`, `monthly_summary`, `yearly_document_check`, `upload_from_url` | Convenience tools for common workflows                                                                                                         |
+| PDF pages       | `extract_document_pages`, `find_document_pages`                                                 | Extract pages into a new PDF file or find the pages containing a text snippet — processed locally, without modifying the document in Paperless |
 
 ### Paperless-ngx 3.0+ Tools
 
