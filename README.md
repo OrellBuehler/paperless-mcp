@@ -27,6 +27,8 @@ Things you can ask once it's connected:
 >
 > "Which documents in my inbox are missing a correspondent or document type?"
 >
+> "Give me just the page of my insurance policy that mentions the deductible, as a PDF"
+>
 > "Find the document about the espresso machine warranty" _(semantic search — no keyword match needed)_
 
 ## Quick start
@@ -101,12 +103,13 @@ Semantic search is off by default. To enable it, add `"EMBEDDINGS_ENABLED": "tru
 
 ### Extended Tools
 
-| Category        | Tools                                                                                           | Description                                              |
-| --------------- | ----------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
-| Semantic search | `semantic_search`, `sync_embeddings`, `embedding_status`                                        | Vector similarity search using local sqlite-vec database |
-| Content         | `get_document_content`                                                                          | Extract OCR'd text content from documents                |
-| Workflows       | `auto_classify_document`, `process_inbox`, `bulk_tag_by_content`                                | AI-assisted classification and bulk operations           |
-| Helpers         | `get_documents_by_correspondent`, `monthly_summary`, `yearly_document_check`, `upload_from_url` | Convenience tools for common workflows                   |
+| Category        | Tools                                                                                           | Description                                                                                                                                    |
+| --------------- | ----------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| Semantic search | `semantic_search`, `sync_embeddings`, `embedding_status`                                        | Vector similarity search using local sqlite-vec database                                                                                       |
+| Content         | `get_document_content`                                                                          | Extract OCR'd text content from documents                                                                                                      |
+| Workflows       | `auto_classify_document`, `process_inbox`, `bulk_tag_by_content`                                | AI-assisted classification and bulk operations                                                                                                 |
+| Helpers         | `get_documents_by_correspondent`, `monthly_summary`, `yearly_document_check`, `upload_from_url` | Convenience tools for common workflows                                                                                                         |
+| PDF pages       | `extract_document_pages`, `find_document_pages`                                                 | Extract pages into a new PDF file or find the pages containing a text snippet — processed locally, without modifying the document in Paperless |
 
 ### Paperless-ngx 3.0+ Tools
 
