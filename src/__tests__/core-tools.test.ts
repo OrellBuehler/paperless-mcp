@@ -120,6 +120,16 @@ describe("core CRUD tools", () => {
     );
   });
 
+  it("delete_storage_path DELETEs the id endpoint", async () => {
+    mockFetch.mockResolvedValueOnce({ ok: true, status: 204 });
+    const res = await tools.get("delete_storage_path")!({ id: 27 });
+    expect(mockFetch).toHaveBeenCalledWith(
+      "http://localhost:8000/api/storage_paths/27/",
+      expect.objectContaining({ method: "DELETE" }),
+    );
+    expect(res.isError).toBeFalsy();
+  });
+
   it("get_custom_field GETs the id endpoint", async () => {
     mockFetch.mockResolvedValueOnce(mockJson({ id: 4 }));
     await tools.get("get_custom_field")!({ id: 4 });

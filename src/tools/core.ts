@@ -851,7 +851,11 @@ export function registerCoreTools(server: McpServer, client: PaperlessClient) {
     "Create a new storage path",
     {
       name: z.string(),
-      path: z.string().describe("Path template, e.g. '{correspondent}/{created_year}'"),
+      path: z
+        .string()
+        .describe(
+          "Path template, e.g. '{{ owner_username }}/{{ correspondent }}/{{ created_year }}/{{ title }}'",
+        ),
       match: z.string().optional(),
       matching_algorithm: z
         .number()
@@ -897,6 +901,19 @@ export function registerCoreTools(server: McpServer, client: PaperlessClient) {
             body: JSON.stringify(body),
           }),
         );
+      } catch (e) {
+        return err(e);
+      }
+    },
+  );
+
+  server.tool(
+    "delete_storage_path",
+    "Delete a storage path. Documents using it keep their files but lose the storage path assignment.",
+    { id: z.number() },
+    async ({ id }) => {
+      try {
+        return ok(await client.fetch(`/api/storage_paths/${id}/`, { method: "DELETE" }));
       } catch (e) {
         return err(e);
       }

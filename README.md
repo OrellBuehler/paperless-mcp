@@ -81,7 +81,7 @@ Semantic search is off by default. To enable it, add `"EMBEDDINGS_ENABLED": "tru
 | Document types      | `list_document_types`, `get_document_type`, `create_document_type`, `update_document_type`, `delete_document_type`                                                               |
 | Tags                | `list_tags`, `get_tag`, `create_tag`, `update_tag`, `delete_tag`                                                                                                                 |
 | Saved views         | `list_saved_views`, `get_saved_view`, `create_saved_view`, `update_saved_view`                                                                                                   |
-| Storage paths       | `list_storage_paths`, `get_storage_path`, `create_storage_path`, `update_storage_path`                                                                                           |
+| Storage paths       | `list_storage_paths`, `get_storage_path`, `create_storage_path`, `update_storage_path`, `delete_storage_path`                                                                    |
 | Custom fields       | `list_custom_fields`, `get_custom_field`, `create_custom_field`, `update_custom_field`                                                                                           |
 | Users               | `list_users`, `get_user`, `create_user`, `update_user`                                                                                                                           |
 | Groups              | `list_groups`, `get_group`, `create_group`, `update_group`                                                                                                                       |
