@@ -607,13 +607,9 @@ describe("OAuth mode", () => {
     });
     expect(bad.status).toBe(400);
     expect((await bad.json()).error).toBe("invalid_grant");
-    const reuse = await exchange({
-      grant_type: "authorization_code",
-      code,
-      code_verifier: verifier,
-      client_id,
-    });
-    expect((await reuse.json()).error).toBe("invalid_grant");
+    const good = { grant_type: "authorization_code", code, code_verifier: verifier, client_id };
+    expect((await exchange(good)).status).toBe(200);
+    expect((await (await exchange(good)).json()).error).toBe("invalid_grant");
   });
 
   it("requires the client secret for confidential clients", async () => {
@@ -737,6 +733,7 @@ describe("OAuth mode", () => {
     const next = await r.json();
     expect(next.access_token).not.toBe(tokens.access_token);
     expect(oauth.resolve({ authorization: `Bearer ${next.access_token}` })?.token).toBe("user-tok");
+    expect(oauth.resolve({ authorization: `Bearer ${tokens.access_token}` })).toBeNull();
     const reuse = await exchange({
       grant_type: "refresh_token",
       refresh_token: String(tokens.refresh_token),
@@ -811,18 +808,75 @@ describe("OAuth mode", () => {
     expect(r.status).toBe(200);
   });
 
-  it("rejects new sign-ins when too many are pending instead of evicting them", async () => {
+  it("evicts unconsented sign-ins instead of rejecting when pending is full", async () => {
+    await restart({ maxPending: 3 });
+    const attacker = await registerClient();
+    for (let n = 0; n < 5; n++) await startConsent(attacker.client_id);
+    const { client_id } = await registerClient();
+    const back = await signIn(client_id);
+    expect(back.searchParams.get("code")).toBeTruthy();
+  });
+
+  it("prefers evicting unconsented sign-ins over approved ones", async () => {
     await restart({ maxPending: 2 });
+    const { client_id } = await registerClient();
+    const { cookie, idp } = await approve(client_id);
+    await startConsent(client_id);
+    await startConsent(client_id);
+    await startConsent(client_id);
+    const back = await finish(cookie, idp);
+    expect(back.searchParams.get("code")).toBeTruthy();
+  });
+
+  it("expires unconsented sign-ins after a few minutes but keeps approved ones longer", async () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     const { client_id } = await registerClient();
-    const first = await startConsent(client_id);
-    await startConsent(client_id);
-    const busy = await authorize(client_id);
-    expect(busy.status).toBe(503);
-    expect(busy.headers.get("location")).toBeNull();
-    expect((await postConsent(first.id, "approve", first.cookie)).status).toBe(303);
+    const idle = await startConsent(client_id);
+    const { cookie, idp } = await approve(client_id);
+    vi.setSystemTime(Date.now() + 181 * 1000);
+    expect((await postConsent(idle.id, "approve", idle.cookie)).status).toBe(400);
+    expect((await finish(cookie, idp)).searchParams.get("code")).toBeTruthy();
+  });
 
+  it("does not count unconsented sign-ins as client activity", async () => {
+    await restart({ maxClients: 1 });
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const { client_id } = await registerClient();
     vi.setSystemTime(Date.now() + 601 * 1000);
-    expect((await authorize(client_id)).status).toBe(200);
+    await startConsent(client_id);
+    expect((await rawRegister()).status).toBe(201);
+  });
+
+  it("keeps one access and one refresh token per grant", async () => {
+    await restart({ maxTokens: 2 });
+    const { client_id, tokens } = await login();
+    let refreshToken = String(tokens.refresh_token);
+    for (let n = 0; n < 5; n++) {
+      const r = await exchange({
+        grant_type: "refresh_token",
+        refresh_token: refreshToken,
+        client_id,
+      });
+      expect(r.status).toBe(200);
+      refreshToken = (await r.json()).refresh_token;
+    }
+  });
+
+  it("does not burn a code on a request from the wrong client or redirect_uri", async () => {
+    const { client_id } = await registerClient();
+    const other = await registerClient();
+    const back = await signIn(client_id);
+    const params = {
+      grant_type: "authorization_code",
+      code: back.searchParams.get("code")!,
+      code_verifier: verifier,
+      client_id,
+    };
+    expect((await exchange({ ...params, client_id: other.client_id })).status).toBe(400);
+    expect(
+      (await exchange({ ...params, redirect_uri: "http://localhost:9999/other" })).status,
+    ).toBe(400);
+    expect((await exchange({ ...params, code_verifier: "w".repeat(50) })).status).toBe(400);
+    expect((await exchange(params)).status).toBe(200);
   });
 });

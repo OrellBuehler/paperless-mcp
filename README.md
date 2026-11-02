@@ -274,10 +274,13 @@ Notes:
   is capped: 1000 registered clients and 1000 sign-ins in progress. Request
   bodies are limited to 8 KB; a client may register at most 10 redirect URIs
   (2000 characters each) and a `client_name` of up to 200 characters. When the
-  store is full, new requests get `503`. Clients that still have active tokens
-  are never evicted, and pending sign-ins aren't either. If the server is
-  reachable from the internet, add rate limiting for these endpoints at your
-  reverse proxy.
+  client store is full, new registrations get `503`; clients that still have
+  active tokens or an approved sign-in are never evicted. When the sign-in store
+  is full, the oldest sign-ins not yet approved on the consent page are evicted
+  first. Unapproved sign-ins expire after 3 minutes, and approved ones after 10
+  (while the user is at the identity provider). Each grant keeps a single
+  access token and a single refresh token. If the server is reachable from the
+  internet, add rate limiting for these endpoints at your reverse proxy.
 - If the same authorization code is used twice, the tokens already issued from
   it are revoked.
 - If Paperless rejects a user's token (e.g. they regenerated it), all grants for

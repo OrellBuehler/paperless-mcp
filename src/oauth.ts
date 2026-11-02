@@ -56,6 +56,8 @@ interface Grant {
   paperlessToken: string;
   scope?: string;
   expires: number;
+  accessKey?: string;
+  refreshKey?: string;
 }
 
 interface Code {
@@ -86,6 +88,7 @@ export const DEFAULT_LIMITS: OAuthLimits = {
 };
 
 const PENDING_TTL = 600_000;
+const CONSENT_TTL = 180_000;
 const CODE_TTL = 60_000;
 const MAX_BODY = 8 * 1024;
 const MAX_REDIRECT_URIS = 10;
@@ -321,7 +324,7 @@ export function createOAuth(
     if (clients.size < limits.maxClients) return true;
     for (const map of [pending, codes, access, refresh]) sweep(map);
     const active = new Set<string>();
-    for (const p of pending.values()) active.add(p.clientId);
+    for (const p of pending.values()) if (p.approved) active.add(p.clientId);
     for (const map of [codes, access, refresh])
       for (const v of map.values()) active.add(v.grant.clientId);
     const cutoff = Date.now() - PENDING_TTL;
@@ -334,8 +337,12 @@ export function createOAuth(
     const accessExpires = Math.min(now + settings.accessTokenTtl * 1000, grant.expires);
     const accessToken = random();
     const refreshToken = random();
-    access.set(sha256(accessToken), { grant, expires: accessExpires });
-    refresh.set(sha256(refreshToken), { grant, expires: grant.expires });
+    if (grant.accessKey) access.delete(grant.accessKey);
+    if (grant.refreshKey) refresh.delete(grant.refreshKey);
+    grant.accessKey = sha256(accessToken);
+    grant.refreshKey = sha256(refreshToken);
+    access.set(grant.accessKey, { grant, expires: accessExpires });
+    refresh.set(grant.refreshKey, { grant, expires: grant.expires });
     return {
       access_token: accessToken,
       token_type: "Bearer",
@@ -544,6 +551,7 @@ export function createOAuth(
       return;
     }
     p.approved = true;
+    p.expires = Date.now() + PENDING_TTL;
     redirect(
       res,
       withParams(idp.authorization_endpoint, {
@@ -559,6 +567,15 @@ export function createOAuth(
       {},
       303,
     );
+  }
+
+  function makePendingRoom() {
+    if (hasRoom(pending, limits.maxPending)) return;
+    for (const approvedToo of [false, true])
+      for (const [k, p] of pending) {
+        if (pending.size < limits.maxPending) return;
+        if (approvedToo || !p.approved) pending.delete(k);
+      }
   }
 
   function authorize(url: URL, res: ServerResponse) {
@@ -586,10 +603,7 @@ export function createOAuth(
       text(res, 400, `Invalid authorization request: ${error}`);
       return;
     }
-    if (!hasRoom(pending, limits.maxPending)) {
-      text(res, 503, "Too many sign-ins in progress. Try again in a few minutes.");
-      return;
-    }
+    makePendingRoom();
     const key = random();
     const cookie = random();
     pending.set(key, {
@@ -602,7 +616,7 @@ export function createOAuth(
       verifier: random(),
       binding: sha256(cookie),
       approved: false,
-      expires: Date.now() + PENDING_TTL,
+      expires: Date.now() + CONSENT_TTL,
     });
     consentPage(res, key, cookie, client, redirectUri);
   }
@@ -683,7 +697,8 @@ export function createOAuth(
       const idToken = await exchangeCode(idp, q.get("code") || "", p.verifier);
       if (decodeJwtPayload(idToken)?.nonce !== p.nonce) throw new Error("Nonce mismatch");
       const paperlessToken = await paperlessLogin(idToken);
-      if (!hasRoom(codes, limits.maxCodes)) throw new Error("Server busy, try again");
+      sweep(codes);
+      if (codes.size >= limits.maxCodes) throw new Error("Server busy, try again");
       const code = random();
       const now = Date.now();
       codes.set(sha256(code), {
@@ -756,18 +771,9 @@ export function createOAuth(
         error_description: "Too many active tokens, try again later",
       });
     if (grantType === "authorization_code") {
+      sweep(codes);
       const code = codes.get(sha256(params.get("code") || ""));
-      if (!code || code.expires <= Date.now()) {
-        invalidGrant("Invalid or expired authorization code");
-        return;
-      }
-      if (code.used) {
-        revoke((g) => g.id === code.grant.id);
-        invalidGrant("Authorization code was already used");
-        return;
-      }
-      code.used = true;
-      if (code.grant.clientId !== clientId) {
+      if (!code || code.grant.clientId !== clientId) {
         invalidGrant("Invalid or expired authorization code");
         return;
       }
@@ -780,10 +786,16 @@ export function createOAuth(
         invalidGrant("PKCE verification failed");
         return;
       }
+      if (code.used) {
+        revoke((g) => g.id === code.grant.id);
+        invalidGrant("Authorization code was already used");
+        return;
+      }
       if (!hasRoom(access, limits.maxTokens) || !hasRoom(refresh, limits.maxTokens)) {
         busy();
         return;
       }
+      code.used = true;
       json(res, 200, issue(code.grant));
       return;
     }
@@ -794,9 +806,7 @@ export function createOAuth(
         invalidGrant("Invalid or expired refresh token");
         return;
       }
-      refresh.delete(key);
       if (!hasRoom(access, limits.maxTokens) || !hasRoom(refresh, limits.maxTokens)) {
-        refresh.set(key, entry);
         busy();
         return;
       }
