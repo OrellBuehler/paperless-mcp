@@ -68,6 +68,16 @@ describe("PaperlessClient.fetch", () => {
       "403 Forbidden: nope",
     );
   });
+  it("calls onUnauthorized only on 401", async () => {
+    const c = new PaperlessClient("https://p.example.com", "t");
+    c.onUnauthorized = vi.fn();
+    fetchMock.mockResolvedValue(jsonRes({}, 403, "Forbidden"));
+    await expect(c.fetch("/x")).rejects.toThrow("403");
+    expect(c.onUnauthorized).not.toHaveBeenCalled();
+    fetchMock.mockResolvedValue(jsonRes({}, 401, "Unauthorized"));
+    await expect(c.fetch("/x")).rejects.toThrow("401 Unauthorized");
+    expect(c.onUnauthorized).toHaveBeenCalledOnce();
+  });
   it("strips trailing slashes from baseUrl", async () => {
     fetchMock.mockResolvedValue(jsonRes({}));
     await new PaperlessClient("https://p.example.com///", "t").fetch("/api/status/");

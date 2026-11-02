@@ -31,6 +31,7 @@ export const config = {
   embeddingsEnabled: /^(1|true|yes)$/i.test(process.env.EMBEDDINGS_ENABLED || ""),
   allowedOrigins: csv(process.env.MCP_ALLOWED_ORIGINS),
   allowedHosts: csv(process.env.MCP_ALLOWED_HOSTS),
+  oauthEnabled: Boolean((process.env.MCP_OAUTH_ISSUER || "").trim()),
 };
 
 export const adminClient = new PaperlessClient(baseUrl, adminToken, apiVersion);

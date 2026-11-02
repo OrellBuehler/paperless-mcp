@@ -4,6 +4,7 @@ export class PaperlessClient {
   readonly baseUrl: string;
   readonly token: string;
   readonly apiVersion: string;
+  onUnauthorized?: () => void;
 
   constructor(baseUrl: string, token: string, apiVersion = "9") {
     this.baseUrl = baseUrl.replace(/\/+$/, "");
@@ -30,6 +31,7 @@ export class PaperlessClient {
       },
     });
     if (!res.ok) {
+      if (res.status === 401) this.onUnauthorized?.();
       const body = await res.text();
       throw new Error(`${res.status} ${res.statusText}: ${body}`);
     }

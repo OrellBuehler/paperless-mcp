@@ -3,6 +3,7 @@ import { randomUUID, timingSafeEqual } from "node:crypto";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { config, clientFor } from "./config.js";
 import { createServer } from "./server.js";
+import type { Credential, OAuth } from "./oauth.js";
 
 type Headers = Record<string, string | string[] | undefined>;
 
@@ -35,7 +36,12 @@ export function sessionTokenMatches(expected: string, actual: string | null): bo
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
-function setCors(res: ServerResponse, origin: string | undefined) {
+function plainCredential(headers: Headers): Credential | null {
+  const token = extractToken(headers);
+  return token ? { key: token, token, oauth: false } : null;
+}
+
+function setCors(res: ServerResponse, origin: string | undefined, oauth: boolean) {
   if (config.allowedOrigins.includes("*")) {
     res.setHeader("Access-Control-Allow-Origin", "*");
   } else if (origin && config.allowedOrigins.includes(origin)) {
@@ -47,7 +53,10 @@ function setCors(res: ServerResponse, origin: string | undefined) {
     "Access-Control-Allow-Headers",
     "Content-Type, Authorization, X-Paperless-Token, mcp-session-id",
   );
-  res.setHeader("Access-Control-Expose-Headers", "mcp-session-id");
+  res.setHeader(
+    "Access-Control-Expose-Headers",
+    oauth ? "mcp-session-id, WWW-Authenticate" : "mcp-session-id",
+  );
 }
 
 async function readBody(req: IncomingMessage): Promise<unknown> {
@@ -57,12 +66,12 @@ async function readBody(req: IncomingMessage): Promise<unknown> {
   return JSON.parse(Buffer.concat(chunks).toString("utf8"));
 }
 
-export function startHttpServer(): void {
-  const transports = new Map<string, { transport: StreamableHTTPServerTransport; token: string }>();
+export function createHttpHandler(oauth: OAuth | null = null) {
+  const transports = new Map<string, { transport: StreamableHTTPServerTransport; key: string }>();
 
-  const httpServer = createHttpServer(async (req, res) => {
+  return async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     const origin = req.headers.origin;
-    setCors(res, origin);
+    setCors(res, origin, Boolean(oauth));
     if (req.method === "OPTIONS") {
       res.writeHead(204).end();
       return;
@@ -80,18 +89,27 @@ export function startHttpServer(): void {
     }
 
     const url = new URL(req.url || "/", `http://localhost:${config.port}`);
-    if (url.pathname !== "/mcp") {
-      res.writeHead(404).end();
-      return;
-    }
-
-    const rawSessionId = req.headers["mcp-session-id"];
-    const sessionId = Array.isArray(rawSessionId) ? rawSessionId[0] : rawSessionId;
 
     try {
+      if (oauth && (await oauth.handle(req, res, url))) return;
+
+      if (url.pathname !== "/mcp") {
+        res.writeHead(404).end();
+        return;
+      }
+
+      const credential = oauth ? oauth.resolve(req.headers) : plainCredential(req.headers);
+      if (oauth && !credential) {
+        oauth.challenge(res, req.headers);
+        return;
+      }
+
+      const rawSessionId = req.headers["mcp-session-id"];
+      const sessionId = Array.isArray(rawSessionId) ? rawSessionId[0] : rawSessionId;
+
       if (sessionId) {
         const existing = transports.get(sessionId);
-        if (!existing || !sessionTokenMatches(existing.token, extractToken(req.headers))) {
+        if (!existing || !sessionTokenMatches(existing.key, credential?.key ?? null)) {
           // Unknown/expired session — let the client re-initialize.
           res.writeHead(404, { "Content-Type": "application/json" });
           res.end(JSON.stringify({ error: "Unknown or expired session" }));
@@ -103,8 +121,7 @@ export function startHttpServer(): void {
       }
 
       // No session id => initialize request: require a token.
-      const token = extractToken(req.headers);
-      if (!token) {
+      if (!credential) {
         res.writeHead(401, { "Content-Type": "application/json" });
         res.end(
           JSON.stringify({ error: "Missing Paperless token (Authorization: Bearer <token>)" }),
@@ -115,7 +132,7 @@ export function startHttpServer(): void {
       const transport = new StreamableHTTPServerTransport({
         sessionIdGenerator: () => randomUUID(),
         onsessioninitialized: (sid: string) => {
-          transports.set(sid, { transport, token });
+          transports.set(sid, { transport, key: credential.key });
         },
         onsessionclosed: (sid: string) => {
           transports.delete(sid);
@@ -125,7 +142,11 @@ export function startHttpServer(): void {
         if (transport.sessionId) transports.delete(transport.sessionId);
       };
 
-      const server = await createServer(clientFor(token));
+      const client = clientFor(credential.token);
+      if (oauth && credential.oauth) {
+        client.onUnauthorized = () => oauth.revokePaperlessToken(credential.token);
+      }
+      const server = await createServer(client);
       await server.connect(transport);
 
       const body = await readBody(req);
@@ -136,9 +157,25 @@ export function startHttpServer(): void {
         res.end(JSON.stringify({ error: String(e) }));
       }
     }
-  });
+  };
+}
 
+export async function startHttpServer(): Promise<void> {
+  let oauth: OAuth | null = null;
+  if (config.oauthEnabled) {
+    const { createOAuth, oauthSettingsFromEnv } = await import("./oauth.js");
+    try {
+      oauth = createOAuth(oauthSettingsFromEnv(), config.baseUrl);
+    } catch (e) {
+      console.error(e instanceof Error ? e.message : String(e));
+      process.exit(1);
+    }
+  }
+
+  const httpServer = createHttpServer(createHttpHandler(oauth));
   httpServer.listen(config.port, () => {
-    console.error(`paperless-mcp HTTP server listening on :${config.port}/mcp`);
+    console.error(
+      `paperless-mcp HTTP server listening on :${config.port}/mcp${oauth ? " (OAuth enabled)" : ""}`,
+    );
   });
 }

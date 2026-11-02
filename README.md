@@ -138,22 +138,31 @@ Set `PAPERLESS_API_VERSION=10` to opt into v10 once you are ready for those chan
 
 ## Environment Variables
 
-| Variable                | Required        | Description                                                                                                                                                       |
-| ----------------------- | --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `PAPERLESS_URL`         | Yes             | Base URL of your Paperless-ngx instance                                                                                                                           |
-| `PAPERLESS_TOKEN`       | Yes             | API token. In `stdio` mode this is the user's token; in `http` mode it is the admin/indexer token (builds the shared embedding index and gates `sync_embeddings`) |
-| `PAPERLESS_API_VERSION` | No              | Paperless REST API version to request (default: `9`). Set to `10` for Paperless-ngx 3.0+ v10 semantics, or `none` to send no version header                       |
-| `MCP_TRANSPORT`         | No              | `stdio` (default) or `http`                                                                                                                                       |
-| `PORT`                  | No              | Port for the HTTP server (default: `3001`, http mode only)                                                                                                        |
-| `EMBEDDINGS_ENABLED`    | No              | Set to `true` to enable semantic search tools (default: off)                                                                                                      |
-| `MCP_ALLOWED_ORIGINS`   | No              | Comma-separated `Origin` allowlist for browser clients (http mode). Empty (default) blocks all cross-origin browser requests; use `*` to allow any                |
-| `MCP_ALLOWED_HOSTS`     | No              | Comma-separated `Host` allowlist for DNS-rebinding protection (http mode). Empty (default) disables host validation                                               |
-| `EMBEDDING_PROVIDER`    | No              | `openai` or `ollama` (default: `openai`)                                                                                                                          |
-| `OPENAI_API_KEY`        | If using OpenAI | Required for OpenAI embeddings                                                                                                                                    |
-| `OLLAMA_URL`            | If using Ollama | Ollama server URL (default: `http://localhost:11434`)                                                                                                             |
-| `EMBEDDING_MODEL`       | No              | Model name (defaults per provider)                                                                                                                                |
-| `EMBEDDING_DIMENSIONS`  | No              | Vector dimensions (defaults per provider)                                                                                                                         |
-| `PAPERLESS_MCP_DATA`    | No              | Directory for the vector DB (default: `~/.paperless-mcp`)                                                                                                         |
+| Variable                       | Required        | Description                                                                                                                                                       |
+| ------------------------------ | --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PAPERLESS_URL`                | Yes             | Base URL of your Paperless-ngx instance                                                                                                                           |
+| `PAPERLESS_TOKEN`              | Yes             | API token. In `stdio` mode this is the user's token; in `http` mode it is the admin/indexer token (builds the shared embedding index and gates `sync_embeddings`) |
+| `PAPERLESS_API_VERSION`        | No              | Paperless REST API version to request (default: `9`). Set to `10` for Paperless-ngx 3.0+ v10 semantics, or `none` to send no version header                       |
+| `MCP_TRANSPORT`                | No              | `stdio` (default) or `http`                                                                                                                                       |
+| `PORT`                         | No              | Port for the HTTP server (default: `3001`, http mode only)                                                                                                        |
+| `EMBEDDINGS_ENABLED`           | No              | Set to `true` to enable semantic search tools (default: off)                                                                                                      |
+| `MCP_ALLOWED_ORIGINS`          | No              | Comma-separated `Origin` allowlist for browser clients (http mode). Empty (default) blocks all cross-origin browser requests; use `*` to allow any                |
+| `MCP_ALLOWED_HOSTS`            | No              | Comma-separated `Host` allowlist for DNS-rebinding protection (http mode). Empty (default) disables host validation                                               |
+| `MCP_OAUTH_ISSUER`             | No              | OIDC issuer URL of your identity provider. Setting it enables [OAuth mode](#oauth-optional) (http mode only)                                                      |
+| `MCP_OAUTH_CLIENT_ID`          | With OAuth      | Client ID of the OIDC client Paperless uses                                                                                                                       |
+| `MCP_OAUTH_CLIENT_SECRET`      | No              | Client secret of that client (omit for public clients)                                                                                                            |
+| `MCP_OAUTH_PAPERLESS_PROVIDER` | With OAuth      | `provider_id` of the OIDC app in `PAPERLESS_SOCIALACCOUNT_PROVIDERS`                                                                                              |
+| `MCP_PUBLIC_URL`               | With OAuth      | Externally reachable origin of this server, e.g. `https://mcp.example.com`                                                                                        |
+| `MCP_OAUTH_SCOPES`             | No              | Scopes requested from the identity provider (default: `openid email profile`)                                                                                     |
+| `MCP_OAUTH_TOKEN_AUTH_METHOD`  | No              | `client_secret_post` or `client_secret_basic` for the IdP token request (default: picked from discovery, like Paperless)                                          |
+| `MCP_OAUTH_ACCESS_TOKEN_TTL`   | No              | Lifetime of issued access tokens in seconds (default: `3600`)                                                                                                     |
+| `MCP_OAUTH_REFRESH_TOKEN_TTL`  | No              | Lifetime of issued refresh tokens in seconds (default: `2592000`, 30 days)                                                                                        |
+| `EMBEDDING_PROVIDER`           | No              | `openai` or `ollama` (default: `openai`)                                                                                                                          |
+| `OPENAI_API_KEY`               | If using OpenAI | Required for OpenAI embeddings                                                                                                                                    |
+| `OLLAMA_URL`                   | If using Ollama | Ollama server URL (default: `http://localhost:11434`)                                                                                                             |
+| `EMBEDDING_MODEL`              | No              | Model name (defaults per provider)                                                                                                                                |
+| `EMBEDDING_DIMENSIONS`         | No              | Vector dimensions (defaults per provider)                                                                                                                         |
+| `PAPERLESS_MCP_DATA`           | No              | Directory for the vector DB (default: `~/.paperless-mcp`)                                                                                                         |
 
 ## Transports
 
@@ -191,6 +200,77 @@ Non-browser MCP clients (which don't send an `Origin` header) work out of the bo
 Browser-based clients are blocked unless you list their origin in
 `MCP_ALLOWED_ORIGINS`. If the server is reachable on a public hostname, set
 `MCP_ALLOWED_HOSTS` to the expected host(s) for DNS-rebinding protection.
+
+#### OAuth (optional)
+
+MCP clients that only support OAuth sign-in (and users who'd rather not copy API
+tokens around) can sign in through the same OpenID Connect provider Paperless
+already uses for SSO. OAuth is **off** unless `MCP_OAUTH_ISSUER` is set, and it
+only applies to the HTTP transport.
+
+When enabled, paperless-mcp acts as the OAuth 2.1 authorization server for MCP
+clients (per the MCP authorization spec):
+
+1. It serves `/.well-known/oauth-protected-resource[/mcp]` and
+   `/.well-known/oauth-authorization-server`, plus `/register` (dynamic client
+   registration), `/authorize` and `/token`. PKCE (`S256`) is required. A request
+   to `/mcp` without a valid token gets `401` with
+   `WWW-Authenticate: Bearer resource_metadata="…"`.
+2. `/authorize` shows a consent page naming the client and where access will be
+   handed to; after **Continue**, the user is redirected to your identity
+   provider using Paperless's OIDC client.
+3. On `/oauth/callback` the server exchanges the code for an ID token and passes
+   it to Paperless's headless login endpoint
+   (`/api/auth/headless/app/v1/auth/provider/token`). Paperless verifies the
+   token and returns that user's normal API token.
+4. The MCP client receives an opaque access token (plus a rotating refresh
+   token) that maps to that Paperless token, so every tool call runs as the
+   signed-in user.
+
+```bash
+MCP_TRANSPORT=http \
+  PAPERLESS_URL=https://paperless.example.com \
+  PAPERLESS_TOKEN=<admin-token> \
+  MCP_PUBLIC_URL=https://mcp.example.com \
+  MCP_OAUTH_ISSUER=https://auth.example.com/application/o/paperless/ \
+  MCP_OAUTH_CLIENT_ID=<paperless-oidc-client-id> \
+  MCP_OAUTH_CLIENT_SECRET=<paperless-oidc-client-secret> \
+  MCP_OAUTH_PAPERLESS_PROVIDER=authentik \
+  node dist/index.js
+```
+
+Setup:
+
+- **Identity provider:** reuse the OIDC client Paperless already has and add
+  `{MCP_PUBLIC_URL}/oauth/callback` as an extra redirect URI. Paperless checks
+  that the ID token's audience is its own client, so a separate client won't work.
+- **Paperless:** OIDC social login must be configured in
+  `PAPERLESS_SOCIALACCOUNT_PROVIDERS`. `MCP_OAUTH_PAPERLESS_PROVIDER` is that
+  app's `provider_id`, and `MCP_OAUTH_ISSUER` must be the same issuer as its
+  `server_url`. A user must have signed in to Paperless via SSO once (so the
+  account is linked), unless `PAPERLESS_SOCIALACCOUNT_ALLOW_SIGNUPS` is on.
+- **MFA:** if a user has two-factor auth in Paperless, the sign-in stops at the
+  MFA step and fails. Set `PAPERLESS_SOCIAL_ACCOUNT_MFA_TRUSTED_AMR` so Paperless
+  trusts the provider's MFA.
+- **Group sync:** with `PAPERLESS_SOCIAL_ACCOUNT_SYNC_GROUPS` on, every sign-in
+  re-syncs the user's groups from the ID token. Make `MCP_OAUTH_SCOPES` match
+  the scopes Paperless requests (e.g. `openid email profile groups`) and make
+  sure the groups claim is in the ID token. Otherwise the user's groups can be
+  removed.
+
+Notes:
+
+- `Authorization: Bearer` must carry an OAuth-issued token in this mode. Raw
+  Paperless API tokens still work through `X-Paperless-Token` (e.g. for service
+  accounts). This way an expired OAuth token gets a proper `401` challenge
+  instead of being passed to Paperless.
+- Client registrations and tokens live in memory. After a restart, clients have
+  to register and authorize again.
+- If Paperless rejects a user's token (e.g. they regenerated it), all grants for
+  that token are revoked and the client is asked to authorize again.
+- `MCP_PUBLIC_URL` must be the externally reachable origin of this server
+  (scheme + host, no path). Origin and host checks apply to the OAuth endpoints
+  as well.
 
 ## Run as an HTTP sidecar (Docker)
 
