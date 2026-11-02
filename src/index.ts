@@ -5,7 +5,7 @@ import { createServer } from "./server.js";
 import { startHttpServer } from "./http.js";
 
 if (config.transport === "http") {
-  startHttpServer();
+  await startHttpServer();
 } else {
   const server = await createServer(adminClient);
   const transport = new StdioServerTransport();
