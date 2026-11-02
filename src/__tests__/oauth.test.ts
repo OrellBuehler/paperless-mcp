@@ -8,7 +8,7 @@ vi.stubEnv("PAPERLESS_TOKEN", "admin-tok");
 
 const { createHttpHandler } = await import("../http.js");
 const { config, clientFor } = await import("../config.js");
-const { createOAuth, oauthSettingsFromEnv, verifyPkce, decodeJwtPayload } =
+const { createOAuth, oauthSettingsFromEnv, verifyPkce, decodeJwtPayload, DEFAULT_LIMITS } =
   await import("../oauth.js");
 
 const realFetch = globalThis.fetch;
@@ -69,6 +69,12 @@ describe("http transport defaults (OAuth disabled)", () => {
     }
     expect((await realFetch(`${base}/token`, { method: "POST" })).status).toBe(404);
     expect((await realFetch(`${base}/register`, { method: "POST" })).status).toBe(404);
+    expect((await realFetch(`${base}/oauth/consent`, { method: "POST" })).status).toBe(404);
+    const foreign = await realFetch(`${base}/oauth/consent`, {
+      method: "POST",
+      headers: { Origin: "https://mcp.example.com" },
+    });
+    expect(foreign.status).toBe(403);
   });
 
   it("returns the same 401 without a token and no WWW-Authenticate", async () => {
@@ -141,6 +147,36 @@ describe("oauthSettingsFromEnv", () => {
   });
 });
 
+describe("MCP_PUBLIC_URL validation", () => {
+  const env = (url: string) => ({
+    MCP_OAUTH_ISSUER: "https://idp.example.com",
+    MCP_OAUTH_CLIENT_ID: "cid",
+    MCP_OAUTH_PAPERLESS_PROVIDER: "authentik",
+    MCP_PUBLIC_URL: url,
+  });
+  afterEach(() => vi.restoreAllMocks());
+
+  it("rejects a path, query or invalid URL", () => {
+    expect(() => oauthSettingsFromEnv(env("https://mcp.example.com/paperless"))).toThrow(
+      "must be an origin without a path",
+    );
+    expect(() => oauthSettingsFromEnv(env("https://mcp.example.com/?x=1"))).toThrow(
+      "must be an origin without a path",
+    );
+    expect(() => oauthSettingsFromEnv(env("not a url"))).toThrow("not a valid URL");
+  });
+
+  it("warns about plain http except on localhost", () => {
+    const warn = vi.spyOn(console, "error").mockImplementation(() => {});
+    oauthSettingsFromEnv(env("http://localhost:3001"));
+    oauthSettingsFromEnv(env("http://127.0.0.1:3001"));
+    oauthSettingsFromEnv(env("https://mcp.example.com"));
+    expect(warn).not.toHaveBeenCalled();
+    expect(oauthSettingsFromEnv(env("http://mcp.lan:3001")).publicUrl).toBe("http://mcp.lan:3001");
+    expect(warn).toHaveBeenCalledOnce();
+  });
+});
+
 describe("verifyPkce", () => {
   const v = "dBjftJeZ4CVP-mJ92K1QDuNnknC4XEQZvTmZrjo-jXk";
   it("accepts a verifier matching its S256 challenge", () =>
@@ -176,10 +212,19 @@ describe("OAuth mode", () => {
   let calls: { url: string; init?: RequestInit }[];
   let idTokenNonce: (nonce: string) => string;
   let paperlessResponse: () => Response;
+  const idpNonces = new Map<string, string>();
+
+  async function restart(limits = {}, overrides = {}) {
+    if (server) await close(server);
+    oauth = createOAuth({ ...settings, ...overrides }, "https://p.example.com", {
+      ...DEFAULT_LIMITS,
+      ...limits,
+    });
+    ({ server, base } = await listen(createHttpHandler(oauth)));
+  }
 
   beforeEach(async () => {
-    oauth = createOAuth(settings, "https://p.example.com");
-    ({ server, base } = await listen(createHttpHandler(oauth)));
+    await restart();
     calls = [];
     idTokenNonce = (nonce) => nonce;
     paperlessResponse = () =>
@@ -187,6 +232,7 @@ describe("OAuth mode", () => {
         status: 200,
       });
     let lastNonce = "";
+    idpNonces.clear();
     vi.stubGlobal("fetch", async (input: string | URL, init?: RequestInit) => {
       const url = String(input);
       if (url.startsWith(base)) return realFetch(input, init);
@@ -200,8 +246,11 @@ describe("OAuth mode", () => {
             token_endpoint_auth_methods_supported: ["client_secret_basic", "client_secret_post"],
           }),
         );
-      if (url === "https://idp.example.com/token")
-        return new Response(JSON.stringify({ id_token: jwt({ nonce: idTokenNonce(lastNonce) }) }));
+      if (url === "https://idp.example.com/token") {
+        const code = new URLSearchParams(String(init?.body)).get("code")!;
+        const nonce = idpNonces.get(code) ?? lastNonce;
+        return new Response(JSON.stringify({ id_token: jwt({ nonce: idTokenNonce(nonce) }) }));
+      }
       if (url === "https://p.example.com/api/auth/headless/app/v1/auth/provider/token")
         return paperlessResponse();
       throw new Error(`unexpected fetch ${url}`);
@@ -222,12 +271,16 @@ describe("OAuth mode", () => {
     await close(server);
   });
 
-  async function registerClient(body: Record<string, unknown> = {}) {
-    const r = await fetch(`${base}/register`, {
+  function rawRegister(body: Record<string, unknown> = {}) {
+    return fetch(`${base}/register`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ redirect_uris: [redirectUri], client_name: "test", ...body }),
     });
+  }
+
+  async function registerClient(body: Record<string, unknown> = {}) {
+    const r = await rawRegister(body);
     expect(r.status).toBe(201);
     return (await r.json()) as { client_id: string; client_secret?: string };
   }
@@ -250,28 +303,43 @@ describe("OAuth mode", () => {
     const a = await authorize(clientId);
     expect(a.status).toBe(200);
     const cookie = a.headers.get("set-cookie")!.split(";")[0];
-    const id = /id=([^&"]+)&amp;action=approve/.exec(await a.text())![1];
-    return { cookie, id: decodeURIComponent(id) };
+    const id = /name="id" value="([^"]+)"/.exec(await a.text())![1];
+    return { cookie, id };
+  }
+
+  function postConsent(id: string, action: string, cookie: string, origin?: string) {
+    return fetch(`${base}/oauth/consent`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Cookie: cookie,
+        ...(origin ? { Origin: origin } : {}),
+      },
+      body: new URLSearchParams({ id, action }).toString(),
+      redirect: "manual",
+    });
   }
 
   async function approve(clientId: string) {
     const { cookie, id } = await startConsent(clientId);
-    const r = await fetch(`${base}/oauth/consent?id=${encodeURIComponent(id)}&action=approve`, {
-      headers: { Cookie: cookie },
-      redirect: "manual",
-    });
-    expect(r.status).toBe(302);
+    const r = await postConsent(id, "approve", cookie);
+    expect(r.status).toBe(303);
     return { cookie, idp: new URL(r.headers.get("location")!) };
   }
 
-  async function signIn(clientId: string) {
-    const { cookie, idp } = await approve(clientId);
+  async function finish(cookie: string, idp: URL, code = "idp-code") {
+    if (code !== "idp-code") idpNonces.set(code, idp.searchParams.get("nonce")!);
     const cb = await fetch(
-      `${base}/oauth/callback?code=idp-code&state=${idp.searchParams.get("state")}`,
+      `${base}/oauth/callback?code=${code}&state=${idp.searchParams.get("state")}`,
       { headers: { Cookie: cookie }, redirect: "manual" },
     );
     expect(cb.status).toBe(302);
     return new URL(cb.headers.get("location")!);
+  }
+
+  async function signIn(clientId: string) {
+    const { cookie, idp } = await approve(clientId);
+    return finish(cookie, idp);
   }
 
   async function exchange(params: Record<string, string>) {
@@ -352,9 +420,10 @@ describe("OAuth mode", () => {
     expect(r.status).toBe(200);
     expect(r.headers.get("x-frame-options")).toBe("DENY");
     expect(r.headers.get("set-cookie")).toMatch(
-      /^paperless_mcp_oauth=.+; Path=\/oauth; HttpOnly; SameSite=Lax; Secure/,
+      /^paperless_mcp_oauth_[\w-]{16}=.+; Path=\/oauth; HttpOnly; SameSite=Lax; Secure/,
     );
     const html = await r.text();
+    expect(html).toContain('<form method="post" action="/oauth/consent">');
     expect(html).toContain("&lt;b&gt;Evil&lt;/b&gt;");
     expect(html).not.toContain("<b>Evil</b>");
     expect(html).toContain(redirectUri);
@@ -363,14 +432,12 @@ describe("OAuth mode", () => {
   it("refuses consent and callback from a browser without the flow cookie", async () => {
     const { client_id } = await registerClient();
     const { id } = await startConsent(client_id);
-    const consent = await fetch(
-      `${base}/oauth/consent?id=${encodeURIComponent(id)}&action=approve`,
-      {
-        headers: { Cookie: "paperless_mcp_oauth=other" },
-        redirect: "manual",
-      },
-    );
+    const consent = await postConsent(id, "approve", "paperless_mcp_oauth_x=other");
     expect(consent.status).toBe(400);
+    const viaGet = await fetch(`${base}/oauth/consent?id=${id}&action=approve`, {
+      redirect: "manual",
+    });
+    expect(viaGet.status).toBe(404);
 
     const { idp } = await approve(client_id);
     const cb = await fetch(
@@ -384,10 +451,9 @@ describe("OAuth mode", () => {
   it("returns access_denied when the user denies consent", async () => {
     const { client_id } = await registerClient();
     const { cookie, id } = await startConsent(client_id);
-    const r = await fetch(`${base}/oauth/consent?id=${encodeURIComponent(id)}&action=deny`, {
-      headers: { Cookie: cookie },
-      redirect: "manual",
-    });
+    const r = await postConsent(id, "deny", cookie);
+    expect(r.status).toBe(303);
+    expect(r.headers.get("set-cookie")).toContain("Max-Age=0");
     const back = new URL(r.headers.get("location")!);
     expect(back.origin + back.pathname).toBe(redirectUri);
     expect(back.searchParams.get("error")).toBe("access_denied");
@@ -408,20 +474,53 @@ describe("OAuth mode", () => {
     expect(q.get("code_challenge")).not.toBe(challengeFor(verifier));
   });
 
-  it("validates /authorize requests", async () => {
-    const unknown = await authorize("nope");
-    expect(unknown.status).toBe(400);
+  it("rejects invalid /authorize requests with an error page, never a redirect", async () => {
     const { client_id } = await registerClient();
-    const badRedirect = await authorize(client_id, { redirect_uri: "https://evil.example.com/cb" });
-    expect(badRedirect.status).toBe(400);
-    const noPkce = await authorize(client_id, { code_challenge_method: "plain" });
-    expect(new URL(noPkce.headers.get("location")!).searchParams.get("error")).toBe(
-      "invalid_request",
-    );
-    const badResource = await authorize(client_id, { resource: "https://other.example.com/mcp" });
-    expect(new URL(badResource.headers.get("location")!).searchParams.get("error")).toBe(
-      "invalid_target",
-    );
+    for (const [clientId, extra] of [
+      ["nope", {}],
+      [client_id, { redirect_uri: "https://evil.example.com/cb" }],
+      [client_id, { response_type: "token" }],
+      [client_id, { code_challenge_method: "plain" }],
+      [client_id, { code_challenge: "short" }],
+      [client_id, { resource: "https://other.example.com/mcp" }],
+      [client_id, { state: "s".repeat(1001) }],
+    ] as [string, Record<string, string>][]) {
+      const r = await authorize(clientId, extra);
+      expect(r.status).toBe(400);
+      expect(r.headers.get("location")).toBeNull();
+      expect(r.headers.get("content-type")).toContain("text/plain");
+    }
+  });
+
+  it("allows the consent POST from its own origin only", async () => {
+    const { client_id } = await registerClient();
+    const own = await startConsent(client_id);
+    expect(
+      (await postConsent(own.id, "approve", own.cookie, "https://mcp.example.com")).status,
+    ).toBe(303);
+    const other = await startConsent(client_id);
+    expect(
+      (await postConsent(other.id, "approve", other.cookie, "https://evil.example.com")).status,
+    ).toBe(403);
+    const r = await fetch(`${base}/token`, {
+      method: "POST",
+      headers: { Origin: "https://mcp.example.com" },
+    });
+    expect(r.status).toBe(403);
+  });
+
+  it("supports parallel authorizations in one browser", async () => {
+    const { client_id } = await registerClient();
+    const a = await startConsent(client_id);
+    const b = await startConsent(client_id);
+    expect(a.cookie.split("=")[0]).not.toBe(b.cookie.split("=")[0]);
+    const jar = `${a.cookie}; ${b.cookie}`;
+    const ra = await postConsent(a.id, "approve", jar);
+    const rb = await postConsent(b.id, "approve", jar);
+    const backB = await finish(jar, new URL(rb.headers.get("location")!), "code-b");
+    const backA = await finish(jar, new URL(ra.headers.get("location")!), "code-a");
+    expect(backA.searchParams.get("code")).toBeTruthy();
+    expect(backB.searchParams.get("code")).toBeTruthy();
   });
 
   it("runs authorize -> callback -> token and resolves to the Paperless token", async () => {
@@ -472,6 +571,28 @@ describe("OAuth mode", () => {
     });
     expect(mcp.status).toBe(200);
     expect(mcp.headers.get("mcp-session-id")).toBeTruthy();
+  });
+
+  it("revokes tokens issued from a reused authorization code", async () => {
+    const { client_id } = await registerClient();
+    const back = await signIn(client_id);
+    const params = {
+      grant_type: "authorization_code",
+      code: back.searchParams.get("code")!,
+      code_verifier: verifier,
+      client_id,
+    };
+    const first = await (await exchange(params)).json();
+    expect(oauth.resolve({ authorization: `Bearer ${first.access_token}` })).not.toBeNull();
+    const again = await exchange(params);
+    expect((await again.json()).error).toBe("invalid_grant");
+    expect(oauth.resolve({ authorization: `Bearer ${first.access_token}` })).toBeNull();
+    const refreshed = await exchange({
+      grant_type: "refresh_token",
+      refresh_token: first.refresh_token,
+      client_id,
+    });
+    expect(refreshed.status).toBe(400);
   });
 
   it("rejects a wrong code_verifier and code reuse", async () => {
@@ -534,6 +655,58 @@ describe("OAuth mode", () => {
     const back = await signIn(client_id);
     expect(back.searchParams.get("error")).toBe("access_denied");
     expect(back.searchParams.get("error_description")).toContain("signups closed");
+  });
+
+  it("accepts the Bearer scheme case-insensitively in OAuth mode", async () => {
+    const { tokens } = await login();
+    expect(oauth.resolve({ authorization: `bearer ${tokens.access_token}` })?.token).toBe(
+      "user-tok",
+    );
+    expect(oauth.resolve({ authorization: `BEARER  ${tokens.access_token}` })?.token).toBe(
+      "user-tok",
+    );
+  });
+
+  it("form-urlencodes client credentials for IdP basic auth", async () => {
+    await restart(
+      {},
+      {
+        clientId: "paperless client",
+        clientSecret: "s:e+c/r%t",
+        tokenAuthMethod: "client_secret_basic",
+      },
+    );
+    const { client_id } = await registerClient();
+    await signIn(client_id);
+    const idpToken = calls.find((c) => c.url === "https://idp.example.com/token")!;
+    const auth = (idpToken.init!.headers as Record<string, string>).Authorization;
+    expect(Buffer.from(auth.replace("Basic ", ""), "base64").toString()).toBe(
+      "paperless+client:s%3Ae%2Bc%2Fr%25t",
+    );
+    expect(new URLSearchParams(String(idpToken.init!.body)).get("client_secret")).toBeNull();
+  });
+
+  it("limits grants to an absolute lifetime that refreshing cannot extend", async () => {
+    await restart({}, { accessTokenTtl: 3600, refreshTokenTtl: 5400 });
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const { client_id, tokens } = await login();
+    vi.setSystemTime(Date.now() + 3000 * 1000);
+    const r = await exchange({
+      grant_type: "refresh_token",
+      refresh_token: String(tokens.refresh_token),
+      client_id,
+    });
+    const next = await r.json();
+    expect(next.expires_in).toBeLessThanOrEqual(2400);
+    expect(next.expires_in).toBeGreaterThan(2390);
+    vi.setSystemTime(Date.now() + 2401 * 1000);
+    expect(oauth.resolve({ authorization: `Bearer ${next.access_token}` })).toBeNull();
+    const late = await exchange({
+      grant_type: "refresh_token",
+      refresh_token: next.refresh_token,
+      client_id,
+    });
+    expect((await late.json()).error).toBe("invalid_grant");
   });
 
   it("rejects expired access tokens", async () => {
@@ -602,5 +775,54 @@ describe("OAuth mode", () => {
     });
     expect(after.status).toBe(401);
     expect(after.headers.get("www-authenticate")).toContain("resource_metadata=");
+  });
+
+  it("bounds /register input", async () => {
+    const big = await rawRegister({ client_name: "x".repeat(9000) });
+    expect(big.status).toBe(400);
+    expect((await big.json()).error).toBe("invalid_client_metadata");
+    const many = await rawRegister({
+      redirect_uris: Array.from({ length: 11 }, (_, i) => `http://localhost/${i}`),
+    });
+    expect(many.status).toBe(400);
+    const longUri = await rawRegister({ redirect_uris: [`http://localhost/${"a".repeat(2001)}`] });
+    expect(longUri.status).toBe(400);
+    const longName = await rawRegister({ client_name: "n".repeat(201) });
+    expect(longName.status).toBe(400);
+  });
+
+  it("rejects registrations when full instead of evicting live clients", async () => {
+    await restart({ maxClients: 2 });
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const { client_id, tokens } = await login();
+    await registerClient();
+    const full = await rawRegister();
+    expect(full.status).toBe(503);
+    expect((await full.json()).error).toBe("temporarily_unavailable");
+
+    vi.setSystemTime(Date.now() + 601 * 1000);
+    await registerClient();
+    expect((await rawRegister()).status).toBe(503);
+    const r = await exchange({
+      grant_type: "refresh_token",
+      refresh_token: String(tokens.refresh_token),
+      client_id,
+    });
+    expect(r.status).toBe(200);
+  });
+
+  it("rejects new sign-ins when too many are pending instead of evicting them", async () => {
+    await restart({ maxPending: 2 });
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const { client_id } = await registerClient();
+    const first = await startConsent(client_id);
+    await startConsent(client_id);
+    const busy = await authorize(client_id);
+    expect(busy.status).toBe(503);
+    expect(busy.headers.get("location")).toBeNull();
+    expect((await postConsent(first.id, "approve", first.cookie)).status).toBe(303);
+
+    vi.setSystemTime(Date.now() + 601 * 1000);
+    expect((await authorize(client_id)).status).toBe(200);
   });
 });

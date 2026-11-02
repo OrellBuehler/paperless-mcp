@@ -82,7 +82,7 @@ export function createHttpHandler(oauth: OAuth | null = null) {
       res.end(JSON.stringify({ error: "Host not allowed" }));
       return;
     }
-    if (!originAllowed(origin)) {
+    if (!originAllowed(origin) && !oauth?.consentOrigin(req)) {
       res.writeHead(403, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ error: "Origin not allowed" }));
       return;

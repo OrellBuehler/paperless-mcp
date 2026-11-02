@@ -156,7 +156,7 @@ Set `PAPERLESS_API_VERSION=10` to opt into v10 once you are ready for those chan
 | `MCP_OAUTH_SCOPES`             | No              | Scopes requested from the identity provider (default: `openid email profile`)                                                                                     |
 | `MCP_OAUTH_TOKEN_AUTH_METHOD`  | No              | `client_secret_post` or `client_secret_basic` for the IdP token request (default: picked from discovery, like Paperless)                                          |
 | `MCP_OAUTH_ACCESS_TOKEN_TTL`   | No              | Lifetime of issued access tokens in seconds (default: `3600`)                                                                                                     |
-| `MCP_OAUTH_REFRESH_TOKEN_TTL`  | No              | Lifetime of issued refresh tokens in seconds (default: `2592000`, 30 days)                                                                                        |
+| `MCP_OAUTH_REFRESH_TOKEN_TTL`  | No              | Maximum lifetime of a sign-in in seconds, counted from authorization; refreshing does not extend it (default: `2592000`, 30 days)                                 |
 | `EMBEDDING_PROVIDER`           | No              | `openai` or `ollama` (default: `openai`)                                                                                                                          |
 | `OPENAI_API_KEY`               | If using OpenAI | Required for OpenAI embeddings                                                                                                                                    |
 | `OLLAMA_URL`                   | If using Ollama | Ollama server URL (default: `http://localhost:11434`)                                                                                                             |
@@ -217,7 +217,8 @@ clients (per the MCP authorization spec):
    to `/mcp` without a valid token gets `401` with
    `WWW-Authenticate: Bearer resource_metadata="…"`.
 2. `/authorize` shows a consent page naming the client and where access will be
-   handed to; after **Continue**, the user is redirected to your identity
+   handed to. Invalid requests get an error page, never a redirect. After
+   **Continue** (a form POST tied to a per-sign-in cookie), the user is redirected to your identity
    provider using Paperless's OIDC client.
 3. On `/oauth/callback` the server exchanges the code for an ID token and passes
    it to Paperless's headless login endpoint
@@ -266,11 +267,26 @@ Notes:
   instead of being passed to Paperless.
 - Client registrations and tokens live in memory. After a restart, clients have
   to register and authorize again.
+- A sign-in lasts at most `MCP_OAUTH_REFRESH_TOKEN_TTL` (30 days by default),
+  counted from when the user authorized. Refreshing rotates tokens but doesn't
+  extend that limit; after it the user signs in again.
+- `/register` and `/authorize` need no authentication, so their in-memory state
+  is capped: 1000 registered clients and 1000 sign-ins in progress. Request
+  bodies are limited to 8 KB; a client may register at most 10 redirect URIs
+  (2000 characters each) and a `client_name` of up to 200 characters. When the
+  store is full, new requests get `503`. Clients that still have active tokens
+  are never evicted, and pending sign-ins aren't either. If the server is
+  reachable from the internet, add rate limiting for these endpoints at your
+  reverse proxy.
+- If the same authorization code is used twice, the tokens already issued from
+  it are revoked.
 - If Paperless rejects a user's token (e.g. they regenerated it), all grants for
   that token are revoked and the client is asked to authorize again.
 - `MCP_PUBLIC_URL` must be the externally reachable origin of this server
-  (scheme + host, no path). Origin and host checks apply to the OAuth endpoints
-  as well.
+  (scheme + host, no path). The server refuses to start if it has a path, and
+  warns if it isn't `https` (except for `localhost`/`127.0.0.1`). Origin and host
+  checks apply to the OAuth endpoints as well. The one exception: the consent
+  form may post from `MCP_PUBLIC_URL`'s own origin.
 
 ## Run as an HTTP sidecar (Docker)
 

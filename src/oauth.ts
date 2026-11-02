@@ -17,6 +17,13 @@ export interface OAuthSettings {
   refreshTokenTtl: number;
 }
 
+export interface OAuthLimits {
+  maxClients: number;
+  maxPending: number;
+  maxCodes: number;
+  maxTokens: number;
+}
+
 export interface Credential {
   key: string;
   token: string;
@@ -27,6 +34,7 @@ interface Client {
   name: string;
   redirectUris: string[];
   secretHash?: string;
+  created: number;
 }
 
 interface Pending {
@@ -47,12 +55,14 @@ interface Grant {
   clientId: string;
   paperlessToken: string;
   scope?: string;
+  expires: number;
 }
 
 interface Code {
   grant: Grant;
   redirectUri: string;
   codeChallenge: string;
+  used: boolean;
   expires: number;
 }
 
@@ -68,15 +78,44 @@ interface Discovery {
   token_endpoint_auth_methods_supported?: string[];
 }
 
+export const DEFAULT_LIMITS: OAuthLimits = {
+  maxClients: 1000,
+  maxPending: 1000,
+  maxCodes: 1000,
+  maxTokens: 10_000,
+};
+
 const PENDING_TTL = 600_000;
 const CODE_TTL = 60_000;
-const MAX_ENTRIES = 10_000;
-const MAX_BODY = 64 * 1024;
-const COOKIE = "paperless_mcp_oauth";
+const MAX_BODY = 8 * 1024;
+const MAX_REDIRECT_URIS = 10;
+const MAX_URI_LENGTH = 2000;
+const MAX_NAME_LENGTH = 200;
+const MAX_PARAM_LENGTH = 1000;
+const COOKIE_PREFIX = "paperless_mcp_oauth_";
+const LOCAL_HOSTS = ["localhost", "127.0.0.1", "[::1]"];
 
 function positiveInt(value: string, fallback: number): number {
   const n = parseInt(value, 10);
   return Number.isFinite(n) && n > 0 ? n : fallback;
+}
+
+function parsePublicUrl(value: string): string {
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error(`MCP_PUBLIC_URL is not a valid URL: ${value}`);
+  }
+  if (url.pathname !== "/" || url.search || url.hash)
+    throw new Error(
+      `MCP_PUBLIC_URL must be an origin without a path (e.g. https://mcp.example.com), got ${value}`,
+    );
+  if (url.protocol !== "https:" && !LOCAL_HOSTS.includes(url.hostname))
+    console.error(
+      `Warning: MCP_PUBLIC_URL is not https (${url.origin}); OAuth tokens travel in clear text`,
+    );
+  return url.origin;
 }
 
 export function oauthSettingsFromEnv(env: NodeJS.ProcessEnv = process.env): OAuthSettings {
@@ -88,13 +127,12 @@ export function oauthSettingsFromEnv(env: NodeJS.ProcessEnv = process.env): OAut
     "MCP_PUBLIC_URL",
   ].filter((k) => !get(k));
   if (missing.length) throw new Error(`OAuth mode requires ${missing.join(", ")}`);
-  const publicUrl = new URL(get("MCP_PUBLIC_URL")).origin;
   return {
     issuer: get("MCP_OAUTH_ISSUER").replace(/\/+$/, ""),
     clientId: get("MCP_OAUTH_CLIENT_ID"),
     clientSecret: get("MCP_OAUTH_CLIENT_SECRET"),
     provider: get("MCP_OAUTH_PAPERLESS_PROVIDER"),
-    publicUrl,
+    publicUrl: parsePublicUrl(get("MCP_PUBLIC_URL")),
     scopes: get("MCP_OAUTH_SCOPES") || "openid email profile",
     tokenAuthMethod: get("MCP_OAUTH_TOKEN_AUTH_METHOD"),
     accessTokenTtl: positiveInt(get("MCP_OAUTH_ACCESS_TOKEN_TTL"), 3600),
@@ -116,6 +154,14 @@ function safeEqual(a: string, b: string): boolean {
   return x.length === y.length && timingSafeEqual(x, y);
 }
 
+function formEncode(value: string): string {
+  return new URLSearchParams({ v: value }).toString().slice(2);
+}
+
+function formDecode(value: string): string {
+  return decodeURIComponent(value.replace(/\+/g, " "));
+}
+
 export function verifyPkce(verifier: string, challenge: string): boolean {
   if (!/^[A-Za-z0-9\-._~]{43,128}$/.test(verifier)) return false;
   return safeEqual(sha256(verifier), challenge);
@@ -132,17 +178,22 @@ export function decodeJwtPayload(jwt: string): Record<string, unknown> | null {
   }
 }
 
-function put<K, V>(map: Map<K, V>, key: K, value: V) {
-  if (map.size >= MAX_ENTRIES) {
-    const oldest = map.keys().next().value;
-    if (oldest !== undefined) map.delete(oldest);
-  }
-  map.set(key, value);
+function bearerToken(headers: Headers): string | null {
+  const auth = headers["authorization"];
+  if (typeof auth !== "string") return null;
+  const m = /^bearer(?:\s+(.*))?$/i.exec(auth.trim());
+  return m ? (m[1] || "").trim() : null;
 }
 
 function sweep(map: Map<string, { expires: number }>) {
   const now = Date.now();
   for (const [k, v] of map) if (v.expires <= now) map.delete(k);
+}
+
+function hasRoom(map: Map<string, { expires: number }>, max: number): boolean {
+  if (map.size < max) return true;
+  sweep(map);
+  return map.size < max;
 }
 
 async function readText(req: IncomingMessage): Promise<string> {
@@ -184,8 +235,8 @@ function text(res: ServerResponse, status: number, message: string) {
   res.end(message);
 }
 
-function redirect(res: ServerResponse, location: string, headers: Headers = {}) {
-  res.writeHead(302, { Location: location, "Cache-Control": "no-store", ...headers });
+function redirect(res: ServerResponse, location: string, headers: Headers = {}, status = 302) {
+  res.writeHead(status, { Location: location, "Cache-Control": "no-store", ...headers });
   res.end();
 }
 
@@ -218,7 +269,11 @@ function paperlessError(status: number): string {
   return `Paperless sign-in failed (${status})`;
 }
 
-export function createOAuth(settings: OAuthSettings, paperlessUrl: string) {
+export function createOAuth(
+  settings: OAuthSettings,
+  paperlessUrl: string,
+  limits: OAuthLimits = DEFAULT_LIMITS,
+) {
   const resourceUrl = `${settings.publicUrl}/mcp`;
   const resourceMetadataUrl = `${settings.publicUrl}/.well-known/oauth-protected-resource/mcp`;
   const callbackUrl = `${settings.publicUrl}/oauth/callback`;
@@ -229,6 +284,11 @@ export function createOAuth(settings: OAuthSettings, paperlessUrl: string) {
   const access = new Map<string, Issued>();
   const refresh = new Map<string, Issued>();
   let discovery: Promise<Discovery> | null = null;
+
+  const cookieName = (key: string) => `${COOKIE_PREFIX}${sha256(key).slice(0, 16)}`;
+  const clearCookie = (key: string) => ({
+    "Set-Cookie": `${cookieName(key)}=; ${cookieAttrs}; Max-Age=0`,
+  });
 
   function resourceAllowed(resource: string): boolean {
     try {
@@ -257,27 +317,46 @@ export function createOAuth(settings: OAuthSettings, paperlessUrl: string) {
     return discovery;
   }
 
+  function clientHasRoom(): boolean {
+    if (clients.size < limits.maxClients) return true;
+    for (const map of [pending, codes, access, refresh]) sweep(map);
+    const active = new Set<string>();
+    for (const p of pending.values()) active.add(p.clientId);
+    for (const map of [codes, access, refresh])
+      for (const v of map.values()) active.add(v.grant.clientId);
+    const cutoff = Date.now() - PENDING_TTL;
+    for (const [id, c] of clients) if (!active.has(id) && c.created <= cutoff) clients.delete(id);
+    return clients.size < limits.maxClients;
+  }
+
   function issue(grant: Grant) {
-    sweep(access);
-    sweep(refresh);
+    const now = Date.now();
+    const accessExpires = Math.min(now + settings.accessTokenTtl * 1000, grant.expires);
     const accessToken = random();
     const refreshToken = random();
-    const now = Date.now();
-    put(access, sha256(accessToken), { grant, expires: now + settings.accessTokenTtl * 1000 });
-    put(refresh, sha256(refreshToken), { grant, expires: now + settings.refreshTokenTtl * 1000 });
+    access.set(sha256(accessToken), { grant, expires: accessExpires });
+    refresh.set(sha256(refreshToken), { grant, expires: grant.expires });
     return {
       access_token: accessToken,
       token_type: "Bearer",
-      expires_in: settings.accessTokenTtl,
+      expires_in: Math.max(1, Math.floor((accessExpires - now) / 1000)),
       refresh_token: refreshToken,
       ...(grant.scope ? { scope: grant.scope } : {}),
     };
   }
 
+  function revoke(match: (grant: Grant) => boolean) {
+    for (const map of [access, refresh])
+      for (const [k, v] of map) if (match(v.grant)) map.delete(k);
+  }
+
+  function revokePaperlessToken(token: string) {
+    revoke((g) => g.paperlessToken === token);
+  }
+
   function resolve(headers: Headers): Credential | null {
-    const auth = headers["authorization"];
-    if (typeof auth === "string" && auth.startsWith("Bearer ")) {
-      const t = auth.slice("Bearer ".length).trim();
+    const t = bearerToken(headers);
+    if (t !== null) {
       if (!t) return null;
       const entry = access.get(sha256(t));
       if (!entry || entry.expires <= Date.now()) return null;
@@ -290,9 +369,7 @@ export function createOAuth(settings: OAuthSettings, paperlessUrl: string) {
   }
 
   function challenge(res: ServerResponse, headers: Headers) {
-    const presented =
-      typeof headers["authorization"] === "string" &&
-      headers["authorization"].startsWith("Bearer ");
+    const presented = bearerToken(headers) !== null;
     const params = [`resource_metadata="${resourceMetadataUrl}"`];
     if (presented) params.unshift(`error="invalid_token"`);
     json(
@@ -308,9 +385,12 @@ export function createOAuth(settings: OAuthSettings, paperlessUrl: string) {
     );
   }
 
-  function revokePaperlessToken(token: string) {
-    for (const map of [access, refresh])
-      for (const [k, v] of map) if (v.grant.paperlessToken === token) map.delete(k);
+  function consentOrigin(req: IncomingMessage): boolean {
+    return (
+      req.method === "POST" &&
+      (req.url || "").split("?")[0] === "/oauth/consent" &&
+      req.headers.origin === settings.publicUrl
+    );
   }
 
   function protectedResource(res: ServerResponse) {
@@ -335,19 +415,40 @@ export function createOAuth(settings: OAuthSettings, paperlessUrl: string) {
   }
 
   async function register(req: IncomingMessage, res: ServerResponse) {
+    const invalid = (description: string) =>
+      json(res, 400, { error: "invalid_client_metadata", error_description: description });
     let body: unknown;
     try {
       body = JSON.parse((await readText(req)) || "{}");
-    } catch {
-      json(res, 400, { error: "invalid_client_metadata", error_description: "Invalid JSON" });
+    } catch (e) {
+      invalid(e instanceof Error && e.message.includes("too large") ? e.message : "Invalid JSON");
       return;
     }
     const parsed = OAuthClientMetadataSchema.safeParse(body);
     if (!parsed.success) {
-      json(res, 400, { error: "invalid_client_metadata", error_description: parsed.error.message });
+      invalid(parsed.error.message);
       return;
     }
     const meta = parsed.data;
+    if (meta.redirect_uris.length > MAX_REDIRECT_URIS) {
+      invalid(`At most ${MAX_REDIRECT_URIS} redirect_uris are allowed`);
+      return;
+    }
+    if (meta.redirect_uris.some((u) => u.length > MAX_URI_LENGTH)) {
+      invalid(`redirect_uris must be at most ${MAX_URI_LENGTH} characters`);
+      return;
+    }
+    if ((meta.client_name || "").length > MAX_NAME_LENGTH) {
+      invalid(`client_name must be at most ${MAX_NAME_LENGTH} characters`);
+      return;
+    }
+    if (!clientHasRoom()) {
+      json(res, 503, {
+        error: "temporarily_unavailable",
+        error_description: "Too many registered clients, try again later",
+      });
+      return;
+    }
     const method =
       meta.token_endpoint_auth_method === "client_secret_post" ||
       meta.token_endpoint_auth_method === "client_secret_basic"
@@ -355,15 +456,17 @@ export function createOAuth(settings: OAuthSettings, paperlessUrl: string) {
         : "none";
     const clientId = random();
     const secret = method === "none" ? undefined : random();
-    put(clients, clientId, {
+    const now = Date.now();
+    clients.set(clientId, {
       name: meta.client_name || "",
       redirectUris: meta.redirect_uris,
       secretHash: secret ? sha256(secret) : undefined,
+      created: now,
     });
     json(res, 201, {
       ...meta,
       client_id: clientId,
-      client_id_issued_at: Math.floor(Date.now() / 1000),
+      client_id_issued_at: Math.floor(now / 1000),
       token_endpoint_auth_method: method,
       grant_types: ["authorization_code", "refresh_token"],
       response_types: ["code"],
@@ -374,7 +477,7 @@ export function createOAuth(settings: OAuthSettings, paperlessUrl: string) {
   function boundPending(req: IncomingMessage, key: string): Pending | null {
     const p = pending.get(key);
     if (!p || p.expires <= Date.now()) return null;
-    const cookie = readCookie(req, COOKIE);
+    const cookie = readCookie(req, cookieName(key));
     return cookie && safeEqual(sha256(cookie), p.binding) ? p : null;
   }
 
@@ -385,30 +488,36 @@ export function createOAuth(settings: OAuthSettings, paperlessUrl: string) {
     client: Client,
     redirectUri: string,
   ) {
-    const link = (action: string) =>
-      escapeHtml(`/oauth/consent?id=${encodeURIComponent(key)}&action=${action}`);
     res.writeHead(200, {
       "Content-Type": "text/html; charset=utf-8",
       "Cache-Control": "no-store",
       "X-Frame-Options": "DENY",
       "Content-Security-Policy":
         "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'",
-      "Referrer-Policy": "no-referrer",
-      "Set-Cookie": `${COOKIE}=${cookie}; ${cookieAttrs}; Max-Age=${PENDING_TTL / 1000}`,
+      "Referrer-Policy": "same-origin",
+      "Set-Cookie": `${cookieName(key)}=${cookie}; ${cookieAttrs}; Max-Age=${PENDING_TTL / 1000}`,
     });
     res.end(`<!doctype html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Authorize Paperless access</title>
-<style>body{font-family:system-ui,sans-serif;max-width:32rem;margin:4rem auto;padding:0 1rem;line-height:1.5}code{word-break:break-all}a{display:inline-block;margin-right:1rem;padding:.5rem 1rem;border:1px solid #888;border-radius:.375rem;text-decoration:none}</style></head>
+<style>body{font-family:system-ui,sans-serif;max-width:32rem;margin:4rem auto;padding:0 1rem;line-height:1.5}code{word-break:break-all}button{margin-right:1rem;padding:.5rem 1rem;font:inherit}</style></head>
 <body><h1>Authorize Paperless access</h1>
 <p><strong>${escapeHtml(client.name || "An MCP client")}</strong> wants to access your Paperless documents through paperless-mcp. After you sign in, access is handed to:</p>
 <p><code>${escapeHtml(redirectUri)}</code></p>
 <p>Only continue if you started this connection yourself.</p>
-<p><a href="${link("approve")}">Continue to sign in</a><a href="${link("deny")}">Deny</a></p>
+<form method="post" action="/oauth/consent"><input type="hidden" name="id" value="${escapeHtml(key)}">
+<button type="submit" name="action" value="approve">Continue to sign in</button><button type="submit" name="action" value="deny">Deny</button></form>
 </body></html>`);
   }
 
-  async function consent(req: IncomingMessage, url: URL, res: ServerResponse) {
-    const key = url.searchParams.get("id") || "";
+  async function consent(req: IncomingMessage, res: ServerResponse) {
+    let params: URLSearchParams;
+    try {
+      params = await readParams(req);
+    } catch {
+      text(res, 400, "Invalid request.");
+      return;
+    }
+    const key = params.get("id") || "";
     const p = boundPending(req, key);
     if (!p || p.approved) {
       text(res, 400, "Authorization request expired or unknown. Start the sign-in again.");
@@ -419,9 +528,11 @@ export function createOAuth(settings: OAuthSettings, paperlessUrl: string) {
       redirect(
         res,
         withParams(p.redirectUri, { error, error_description: description, state: p.state }),
+        clearCookie(key),
+        303,
       );
     };
-    if (url.searchParams.get("action") !== "approve") {
+    if (params.get("action") !== "approve") {
       fail("access_denied", "The user denied the request");
       return;
     }
@@ -445,52 +556,48 @@ export function createOAuth(settings: OAuthSettings, paperlessUrl: string) {
         code_challenge: sha256(p.verifier),
         code_challenge_method: "S256",
       }),
+      {},
+      303,
     );
   }
 
-  async function authorize(url: URL, res: ServerResponse) {
+  function authorize(url: URL, res: ServerResponse) {
     const q = url.searchParams;
-    const clientId = q.get("client_id") || "";
+    const client = clients.get(q.get("client_id") || "");
     const redirectUri = q.get("redirect_uri") || "";
-    const client = clients.get(clientId);
-    if (!client) {
-      text(
-        res,
-        400,
-        "Unknown client_id. The server may have restarted; reconnect the server in your MCP client.",
-      );
-      return;
-    }
-    if (!client.redirectUris.includes(redirectUri)) {
-      text(res, 400, "redirect_uri is not registered for this client.");
-      return;
-    }
     const state = q.get("state") || undefined;
-    const fail = (error: string, description: string) =>
-      redirect(res, withParams(redirectUri, { error, error_description: description, state }));
-    if (q.get("response_type") !== "code") {
-      fail("unsupported_response_type", "response_type must be code");
-      return;
-    }
+    const scope = q.get("scope") || undefined;
     const codeChallenge = q.get("code_challenge") || "";
-    if (!codeChallenge || q.get("code_challenge_method") !== "S256") {
-      fail("invalid_request", "PKCE with code_challenge_method=S256 is required");
-      return;
-    }
     const resource = q.get("resource");
-    if (resource && !resourceAllowed(resource)) {
-      fail("invalid_target", "Unknown resource");
+    const error = !client
+      ? "Unknown client_id. The server may have restarted; reconnect the server in your MCP client."
+      : !client.redirectUris.includes(redirectUri)
+        ? "redirect_uri is not registered for this client."
+        : q.get("response_type") !== "code"
+          ? "response_type must be code."
+          : !/^[A-Za-z0-9_-]{43}$/.test(codeChallenge) || q.get("code_challenge_method") !== "S256"
+            ? "PKCE with code_challenge_method=S256 is required."
+            : resource && !resourceAllowed(resource)
+              ? "Unknown resource."
+              : (state?.length ?? 0) > MAX_PARAM_LENGTH || (scope?.length ?? 0) > MAX_PARAM_LENGTH
+                ? "state or scope is too long."
+                : null;
+    if (error || !client) {
+      text(res, 400, `Invalid authorization request: ${error}`);
       return;
     }
-    sweep(pending);
+    if (!hasRoom(pending, limits.maxPending)) {
+      text(res, 503, "Too many sign-ins in progress. Try again in a few minutes.");
+      return;
+    }
     const key = random();
     const cookie = random();
-    put(pending, key, {
-      clientId,
+    pending.set(key, {
+      clientId: q.get("client_id")!,
       redirectUri,
       codeChallenge,
       state,
-      scope: q.get("scope") || undefined,
+      scope,
       nonce: random(),
       verifier: random(),
       binding: sha256(cookie),
@@ -518,7 +625,8 @@ export function createOAuth(settings: OAuthSettings, paperlessUrl: string) {
         ? settings.tokenAuthMethod === "client_secret_basic"
         : !methods.includes("client_secret_post") && methods.includes("client_secret_basic"));
     if (basic) {
-      headers.Authorization = `Basic ${Buffer.from(`${settings.clientId}:${settings.clientSecret}`).toString("base64")}`;
+      const credentials = `${formEncode(settings.clientId)}:${formEncode(settings.clientSecret)}`;
+      headers.Authorization = `Basic ${Buffer.from(credentials).toString("base64")}`;
     } else {
       body.set("client_id", settings.clientId);
       if (settings.clientSecret) body.set("client_secret", settings.clientSecret);
@@ -557,12 +665,11 @@ export function createOAuth(settings: OAuthSettings, paperlessUrl: string) {
       text(res, 400, "Authorization request expired or unknown. Start the sign-in again.");
       return;
     }
-    const clear = { "Set-Cookie": `${COOKIE}=; ${cookieAttrs}; Max-Age=0` };
     const fail = (error: string, description: string) =>
       redirect(
         res,
         withParams(p.redirectUri, { error, error_description: description, state: p.state }),
-        clear,
+        clearCookie(key),
       );
     const upstreamError = q.get("error");
     if (upstreamError) {
@@ -576,15 +683,23 @@ export function createOAuth(settings: OAuthSettings, paperlessUrl: string) {
       const idToken = await exchangeCode(idp, q.get("code") || "", p.verifier);
       if (decodeJwtPayload(idToken)?.nonce !== p.nonce) throw new Error("Nonce mismatch");
       const paperlessToken = await paperlessLogin(idToken);
-      sweep(codes);
+      if (!hasRoom(codes, limits.maxCodes)) throw new Error("Server busy, try again");
       const code = random();
-      put(codes, sha256(code), {
-        grant: { id: random(), clientId: p.clientId, paperlessToken, scope: p.scope },
+      const now = Date.now();
+      codes.set(sha256(code), {
+        grant: {
+          id: random(),
+          clientId: p.clientId,
+          paperlessToken,
+          scope: p.scope,
+          expires: now + settings.refreshTokenTtl * 1000,
+        },
         redirectUri: p.redirectUri,
         codeChallenge: p.codeChallenge,
-        expires: Date.now() + CODE_TTL,
+        used: false,
+        expires: now + CODE_TTL,
       });
-      redirect(res, withParams(p.redirectUri, { code, state: p.state }), clear);
+      redirect(res, withParams(p.redirectUri, { code, state: p.state }), clearCookie(key));
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       console.error(`paperless-mcp OAuth sign-in failed: ${message}`);
@@ -596,12 +711,13 @@ export function createOAuth(settings: OAuthSettings, paperlessUrl: string) {
     let id = params.get("client_id") || "";
     let secret = params.get("client_secret") || "";
     const auth = req.headers["authorization"];
-    if (typeof auth === "string" && auth.startsWith("Basic ")) {
-      const decoded = Buffer.from(auth.slice(6), "base64").toString("utf8");
+    const m = typeof auth === "string" ? /^basic\s+(\S+)$/i.exec(auth.trim()) : null;
+    if (m) {
+      const decoded = Buffer.from(m[1], "base64").toString("utf8");
       const i = decoded.indexOf(":");
       if (i >= 0) {
-        id = decodeURIComponent(decoded.slice(0, i));
-        secret = decodeURIComponent(decoded.slice(i + 1));
+        id = formDecode(decoded.slice(0, i));
+        secret = formDecode(decoded.slice(i + 1));
       }
     }
     const client = clients.get(id);
@@ -634,11 +750,24 @@ export function createOAuth(settings: OAuthSettings, paperlessUrl: string) {
     const grantType = params.get("grant_type");
     const invalidGrant = (description: string) =>
       json(res, 400, { error: "invalid_grant", error_description: description });
+    const busy = () =>
+      json(res, 503, {
+        error: "temporarily_unavailable",
+        error_description: "Too many active tokens, try again later",
+      });
     if (grantType === "authorization_code") {
-      const key = sha256(params.get("code") || "");
-      const code = codes.get(key);
-      codes.delete(key);
-      if (!code || code.expires <= Date.now() || code.grant.clientId !== clientId) {
+      const code = codes.get(sha256(params.get("code") || ""));
+      if (!code || code.expires <= Date.now()) {
+        invalidGrant("Invalid or expired authorization code");
+        return;
+      }
+      if (code.used) {
+        revoke((g) => g.id === code.grant.id);
+        invalidGrant("Authorization code was already used");
+        return;
+      }
+      code.used = true;
+      if (code.grant.clientId !== clientId) {
         invalidGrant("Invalid or expired authorization code");
         return;
       }
@@ -649,6 +778,10 @@ export function createOAuth(settings: OAuthSettings, paperlessUrl: string) {
       }
       if (!verifyPkce(params.get("code_verifier") || "", code.codeChallenge)) {
         invalidGrant("PKCE verification failed");
+        return;
+      }
+      if (!hasRoom(access, limits.maxTokens) || !hasRoom(refresh, limits.maxTokens)) {
+        busy();
         return;
       }
       json(res, 200, issue(code.grant));
@@ -662,6 +795,11 @@ export function createOAuth(settings: OAuthSettings, paperlessUrl: string) {
         return;
       }
       refresh.delete(key);
+      if (!hasRoom(access, limits.maxTokens) || !hasRoom(refresh, limits.maxTokens)) {
+        refresh.set(key, entry);
+        busy();
+        return;
+      }
       json(res, 200, issue(entry.grant));
       return;
     }
@@ -682,10 +820,10 @@ export function createOAuth(settings: OAuthSettings, paperlessUrl: string) {
         await register(req, res);
         return true;
       case "GET /authorize":
-        await authorize(url, res);
+        authorize(url, res);
         return true;
-      case "GET /oauth/consent":
-        await consent(req, url, res);
+      case "POST /oauth/consent":
+        await consent(req, res);
         return true;
       case "GET /oauth/callback":
         await callback(req, url, res);
@@ -697,7 +835,14 @@ export function createOAuth(settings: OAuthSettings, paperlessUrl: string) {
     return false;
   }
 
-  return { handle, resolve, challenge, revokePaperlessToken, resourceMetadataUrl };
+  return {
+    handle,
+    resolve,
+    challenge,
+    consentOrigin,
+    revokePaperlessToken,
+    resourceMetadataUrl,
+  };
 }
 
 export type OAuth = ReturnType<typeof createOAuth>;
