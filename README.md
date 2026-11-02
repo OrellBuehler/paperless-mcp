@@ -271,16 +271,16 @@ Notes:
   counted from when the user authorized. Refreshing rotates tokens but doesn't
   extend that limit; after it the user signs in again.
 - `/register` and `/authorize` need no authentication, so their in-memory state
-  is capped: 1000 registered clients and 1000 sign-ins in progress. Request
+  is capped: 1000 registered clients and 10000 sign-ins in progress. Request
   bodies are limited to 8 KB; a client may register at most 10 redirect URIs
   (2000 characters each) and a `client_name` of up to 200 characters. When the
   client store is full, new registrations get `503`; clients that still have
   active tokens or an approved sign-in are never evicted. When the sign-in store
-  is full, the oldest sign-ins not yet approved on the consent page are evicted
-  first. Unapproved sign-ins expire after 3 minutes, and approved ones after 10
+  is full, the oldest sign-ins are evicted (whether or not they were approved). Unapproved sign-ins expire after 3 minutes, and approved ones after 10
   (while the user is at the identity provider). Each grant keeps a single
   access token and a single refresh token. If the server is reachable from the
-  internet, add rate limiting for these endpoints at your reverse proxy.
+  internet, rate-limit `/register`, `/authorize` and `/oauth/consent` per client IP at your
+  reverse proxy (e.g. 10–30 requests per minute).
 - If the same authorization code is used twice, the tokens already issued from
   it are revoked.
 - If Paperless rejects a user's token (e.g. they regenerated it), all grants for

@@ -82,7 +82,7 @@ interface Discovery {
 
 export const DEFAULT_LIMITS: OAuthLimits = {
   maxClients: 1000,
-  maxPending: 1000,
+  maxPending: 10_000,
   maxCodes: 1000,
   maxTokens: 10_000,
 };
@@ -571,11 +571,10 @@ export function createOAuth(
 
   function makePendingRoom() {
     if (hasRoom(pending, limits.maxPending)) return;
-    for (const approvedToo of [false, true])
-      for (const [k, p] of pending) {
-        if (pending.size < limits.maxPending) return;
-        if (approvedToo || !p.approved) pending.delete(k);
-      }
+    for (const k of pending.keys()) {
+      if (pending.size < limits.maxPending) return;
+      pending.delete(k);
+    }
   }
 
   function authorize(url: URL, res: ServerResponse) {
@@ -804,10 +803,6 @@ export function createOAuth(
       const entry = refresh.get(key);
       if (!entry || entry.expires <= Date.now() || entry.grant.clientId !== clientId) {
         invalidGrant("Invalid or expired refresh token");
-        return;
-      }
-      if (!hasRoom(access, limits.maxTokens) || !hasRoom(refresh, limits.maxTokens)) {
-        busy();
         return;
       }
       json(res, 200, issue(entry.grant));

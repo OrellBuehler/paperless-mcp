@@ -808,7 +808,7 @@ describe("OAuth mode", () => {
     expect(r.status).toBe(200);
   });
 
-  it("evicts unconsented sign-ins instead of rejecting when pending is full", async () => {
+  it("evicts the oldest sign-ins instead of rejecting when pending is full", async () => {
     await restart({ maxPending: 3 });
     const attacker = await registerClient();
     for (let n = 0; n < 5; n++) await startConsent(attacker.client_id);
@@ -817,15 +817,30 @@ describe("OAuth mode", () => {
     expect(back.searchParams.get("code")).toBeTruthy();
   });
 
-  it("prefers evicting unconsented sign-ins over approved ones", async () => {
+  it("evicts the oldest sign-in regardless of consent state", async () => {
     await restart({ maxPending: 2 });
     const { client_id } = await registerClient();
-    const { cookie, idp } = await approve(client_id);
-    await startConsent(client_id);
-    await startConsent(client_id);
-    await startConsent(client_id);
-    const back = await finish(cookie, idp);
-    expect(back.searchParams.get("code")).toBeTruthy();
+    const oldest = await approve(client_id);
+    const unapproved = await startConsent(client_id);
+    const newer = await approve(client_id);
+    const cb = await fetch(
+      `${base}/oauth/callback?code=idp-code&state=${oldest.idp.searchParams.get("state")}`,
+      { headers: { Cookie: oldest.cookie }, redirect: "manual" },
+    );
+    expect(cb.status).toBe(400);
+    expect((await finish(newer.cookie, newer.idp)).searchParams.get("code")).toBeTruthy();
+    expect((await postConsent(unapproved.id, "approve", unapproved.cookie)).status).toBe(303);
+  });
+
+  it("refreshes even when the token stores are full", async () => {
+    await restart({ maxTokens: 1 });
+    const { client_id, tokens } = await login();
+    const r = await exchange({
+      grant_type: "refresh_token",
+      refresh_token: String(tokens.refresh_token),
+      client_id,
+    });
+    expect(r.status).toBe(200);
   });
 
   it("expires unconsented sign-ins after a few minutes but keeps approved ones longer", async () => {
