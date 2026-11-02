@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 vi.stubEnv("PAPERLESS_URL", "https://p.example.com");
 vi.stubEnv("PAPERLESS_TOKEN", "admin-tok");
 
-const { extractToken } = await import("../http.js");
+const { extractToken, sessionTokenMatches } = await import("../http.js");
 
 describe("extractToken", () => {
   it("reads a Bearer token", () =>
@@ -16,6 +16,15 @@ describe("extractToken", () => {
     expect(extractToken({})).toBeNull();
     expect(extractToken({ authorization: "Bearer " })).toBeNull();
     expect(extractToken({ authorization: "Basic xyz" })).toBeNull();
+  });
+});
+
+describe("sessionTokenMatches", () => {
+  it("requires the session's original token", () => {
+    expect(sessionTokenMatches("tok-a", "tok-a")).toBe(true);
+    expect(sessionTokenMatches("tok-a", "tok-b")).toBe(false);
+    expect(sessionTokenMatches("tok-a", "tok")).toBe(false);
+    expect(sessionTokenMatches("tok-a", null)).toBe(false);
   });
 });
 

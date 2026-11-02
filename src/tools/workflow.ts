@@ -146,18 +146,17 @@ export function registerWorkflowTools(server: McpServer, client: PaperlessClient
     },
     async ({ query, tag_id, dry_run }) => {
       try {
-        const data = (await client.fetch(
-          `/api/documents/${buildQS({ query, page_size: 100 })}`,
-        )) as PaginatedResponse<Document>;
-        const docIds = data.results.map((d) => d.id);
+        const docs = await client.fetchAllPages<Pick<Document, "id" | "title">>(
+          `/api/documents/${buildQS({ query, fields: "id,title" })}`,
+        );
+        const docIds = docs.map((d) => d.id);
 
         if (dry_run) {
           return ok({
             query,
             tag_id,
-            matching_documents: data.results.map((d) => ({ id: d.id, title: d.title })),
+            matching_documents: docs.map((d) => ({ id: d.id, title: d.title })),
             count: docIds.length,
-            total_matches: data.count,
             note: "Dry run — no changes made. Set dry_run to false to apply.",
           });
         }
@@ -175,17 +174,7 @@ export function registerWorkflowTools(server: McpServer, client: PaperlessClient
           }),
         });
 
-        return ok({
-          query,
-          tag_id,
-          tagged_count: docIds.length,
-          total_matches: data.count,
-          result,
-          note:
-            data.count > 100
-              ? `Only tagged first 100 of ${data.count} matches. Run again to tag more.`
-              : undefined,
-        });
+        return ok({ query, tag_id, tagged_count: docIds.length, result });
       } catch (e) {
         return err(e);
       }

@@ -1,5 +1,5 @@
 import { createServer as createHttpServer, IncomingMessage, ServerResponse } from "node:http";
-import { randomUUID } from "node:crypto";
+import { randomUUID, timingSafeEqual } from "node:crypto";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { config, clientFor } from "./config.js";
 import { createServer } from "./server.js";
@@ -28,6 +28,13 @@ export function hostAllowed(host: string | undefined): boolean {
   return config.allowedHosts.includes(host) || config.allowedHosts.includes(host.split(":")[0]);
 }
 
+export function sessionTokenMatches(expected: string, actual: string | null): boolean {
+  if (!actual) return false;
+  const a = Buffer.from(expected);
+  const b = Buffer.from(actual);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+
 function setCors(res: ServerResponse, origin: string | undefined) {
   if (config.allowedOrigins.includes("*")) {
     res.setHeader("Access-Control-Allow-Origin", "*");
@@ -51,7 +58,7 @@ async function readBody(req: IncomingMessage): Promise<unknown> {
 }
 
 export function startHttpServer(): void {
-  const transports = new Map<string, StreamableHTTPServerTransport>();
+  const transports = new Map<string, { transport: StreamableHTTPServerTransport; token: string }>();
 
   const httpServer = createHttpServer(async (req, res) => {
     const origin = req.headers.origin;
@@ -84,14 +91,14 @@ export function startHttpServer(): void {
     try {
       if (sessionId) {
         const existing = transports.get(sessionId);
-        if (!existing) {
+        if (!existing || !sessionTokenMatches(existing.token, extractToken(req.headers))) {
           // Unknown/expired session — let the client re-initialize.
           res.writeHead(404, { "Content-Type": "application/json" });
           res.end(JSON.stringify({ error: "Unknown or expired session" }));
           return;
         }
         const body = await readBody(req);
-        await existing.handleRequest(req, res, body);
+        await existing.transport.handleRequest(req, res, body);
         return;
       }
 
@@ -108,7 +115,7 @@ export function startHttpServer(): void {
       const transport = new StreamableHTTPServerTransport({
         sessionIdGenerator: () => randomUUID(),
         onsessioninitialized: (sid: string) => {
-          transports.set(sid, transport);
+          transports.set(sid, { transport, token });
         },
         onsessionclosed: (sid: string) => {
           transports.delete(sid);
