@@ -5,6 +5,7 @@ vi.stubEnv("PAPERLESS_TOKEN", "test-token-123");
 
 const { registerCoreTools } = await import("../tools/core.js");
 const { registerHelperTools } = await import("../tools/helpers.js");
+const { registerWorkflowTools } = await import("../tools/workflow.js");
 const { PaperlessClient } = await import("../paperless/client.js");
 
 type ToolHandler = (args: any) => Promise<{ content: { text: string }[]; isError?: boolean }>;
@@ -19,6 +20,7 @@ function collectTools() {
   const client = new PaperlessClient("http://localhost:8000", "test-token-123");
   registerCoreTools(server as any, client);
   registerHelperTools(server as any, client);
+  registerWorkflowTools(server as any, client);
   return tools;
 }
 
@@ -54,6 +56,28 @@ describe("core CRUD tools", () => {
     ]) {
       expect(tools.has(name)).toBe(true);
     }
+  });
+
+  it("update_document omits OCR content from the response", async () => {
+    mockFetch.mockResolvedValueOnce(mockJson({ id: 5, title: "New", content: "long ocr text" }));
+    const res = await tools.get("update_document")!({ id: 5, title: "New" });
+    expect(JSON.parse(res.content[0].text)).toEqual({ id: 5, title: "New" });
+  });
+
+  it("bulk_tag_by_content tags matches across all pages", async () => {
+    mockFetch
+      .mockResolvedValueOnce(mockJson({ count: 2, next: "p2", results: [{ id: 1, title: "a" }] }))
+      .mockResolvedValueOnce(mockJson({ count: 2, next: null, results: [{ id: 2, title: "b" }] }))
+      .mockResolvedValueOnce(mockJson({ result: "OK" }));
+    const res = await tools.get("bulk_tag_by_content")!({ query: "invoice", tag_id: 9 });
+    expect(mockFetch.mock.calls[0][0]).toContain("page=1");
+    expect(mockFetch.mock.calls[1][0]).toContain("page=2");
+    expect(JSON.parse(mockFetch.mock.calls[2][1].body)).toEqual({
+      documents: [1, 2],
+      method: "add_tag",
+      parameters: { tag: 9 },
+    });
+    expect(JSON.parse(res.content[0].text).tagged_count).toBe(2);
   });
 
   it("update_correspondent PATCHes the id endpoint without the id in the body", async () => {

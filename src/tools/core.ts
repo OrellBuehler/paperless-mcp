@@ -202,10 +202,12 @@ export function registerCoreTools(server: McpServer, client: PaperlessClient) {
     async ({ id, ...body }) => {
       try {
         return ok(
-          await client.fetch(`/api/documents/${id}/`, {
-            method: "PATCH",
-            body: JSON.stringify(body),
-          }),
+          summarizeDocs(
+            await client.fetch(`/api/documents/${id}/`, {
+              method: "PATCH",
+              body: JSON.stringify(body),
+            }),
+          ),
         );
       } catch (e) {
         return err(e);

@@ -179,7 +179,8 @@ MCP_TRANSPORT=http PORT=3001 \
 Clients connect to `http://<host>:3001/mcp` and authenticate with **their own**
 Paperless API token via an `Authorization: Bearer <token>` header (or
 `X-Paperless-Token`). Every Paperless call is made with that token, so each user
-only sees the documents their account permits.
+only sees the documents their account permits. The token must be sent on every
+request; a session only accepts the token it was initialized with.
 
 `PAPERLESS_TOKEN` is the admin/indexer token: it builds the shared semantic-search
 index, and the `sync_embeddings` tool is only available to a session using the
