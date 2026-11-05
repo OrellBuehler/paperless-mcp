@@ -127,15 +127,15 @@ These call endpoints that only exist on Paperless-ngx 3.0 and later. On older se
 
 ## Limiting tools
 
-Every tool carries MCP annotations (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`) so clients can tell reads from writes, ask for confirmation before destructive calls, and flag tools that reach beyond Paperless (`upload_from_url`, emailing documents, the embedding provider).
+Every tool carries MCP annotations (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`) so clients can tell reads from writes, ask for confirmation before destructive calls, and flag tools that reach beyond Paperless: `upload_from_url`, `email_document`, `email_documents`, `process_mail_account`, `test_mail_account`, `get_remote_version`, `get_document_ai_suggestions`, `run_task` (its `llm_index` task sends content to the configured LLM), and the semantic-search tools that call the embedding provider.
 
 All tools are registered by default. To save model context or lock the server down:
 
-- `PAPERLESS_TOOLSETS=core,helpers` registers only those groups. Groups: `core`, `workflow`, `helpers`, `users`, `automation`, `documents`, `mail`, `sharing`, `system`, `search`. An unknown name stops the server at startup.
+- `PAPERLESS_TOOLSETS=core,helpers` registers only those groups. Groups: `core`, `workflow`, `helpers`, `users`, `automation`, `documents`, `mail`, `sharing`, `system`, `search`. An unknown name stops the server at startup. `search` only registers tools when `EMBEDDINGS_ENABLED=true`; selecting it without embeddings logs a warning.
 - `PAPERLESS_READ_ONLY=true` registers only tools annotated read-only.
 - `PAPERLESS_DISABLED_TOOLS=delete_document,empty_trash` skips individual tools.
 
-The three combine, and apply to both transports.
+The three combine, and apply to both transports. If together they leave no tools at all, the server exits at startup with an error.
 
 ## API Versioning
 

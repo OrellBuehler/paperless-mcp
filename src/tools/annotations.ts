@@ -148,7 +148,7 @@ export const toolAnnotations: Record<string, ToolAnnotations> = {
   restore_from_trash: additive,
   empty_trash: overwrite,
   acknowledge_tasks: additive,
-  run_task: create,
+  run_task: createExternal,
   get_task_summary: read,
   get_task_status_counts: read,
   get_active_tasks: read,
