@@ -47,6 +47,41 @@ describe("config", () => {
     expect(adminClient.baseUrl).toBe(config.baseUrl);
   });
 
+  it("defaults client timeout and retries", async () => {
+    const { adminClient, clientFor } = await import("../config.js");
+    expect(adminClient.timeoutMs).toBe(60000);
+    expect(adminClient.maxRetries).toBe(2);
+    expect(clientFor("u1").timeoutMs).toBe(60000);
+  });
+
+  it("reads PAPERLESS_TIMEOUT_MS and PAPERLESS_MAX_RETRIES, falling back on invalid values", async () => {
+    vi.stubEnv("PAPERLESS_TIMEOUT_MS", "0");
+    vi.stubEnv("PAPERLESS_MAX_RETRIES", "5");
+    let mod = await import("../config.js");
+    expect(mod.adminClient.timeoutMs).toBe(0);
+    expect(mod.clientFor("u1").maxRetries).toBe(5);
+    vi.resetModules();
+    vi.stubEnv("PAPERLESS_TIMEOUT_MS", "soon");
+    vi.stubEnv("PAPERLESS_MAX_RETRIES", "-1");
+    mod = await import("../config.js");
+    expect(mod.adminClient.timeoutMs).toBe(60000);
+    expect(mod.adminClient.maxRetries).toBe(2);
+    vi.unstubAllEnvs();
+  });
+
+  it("falls back for timeouts beyond the timer limit and caps retries at 10", async () => {
+    vi.stubEnv("PAPERLESS_TIMEOUT_MS", "9999999999");
+    vi.stubEnv("PAPERLESS_MAX_RETRIES", "50");
+    let mod = await import("../config.js");
+    expect(mod.adminClient.timeoutMs).toBe(60000);
+    expect(mod.adminClient.maxRetries).toBe(10);
+    vi.resetModules();
+    vi.stubEnv("PAPERLESS_TIMEOUT_MS", "2147483647");
+    mod = await import("../config.js");
+    expect(mod.adminClient.timeoutMs).toBe(2147483647);
+    vi.unstubAllEnvs();
+  });
+
   it("clientFor caches by token; admin token returns adminClient", async () => {
     const { clientFor, adminClient } = await import("../config.js");
     expect(clientFor("u1")).toBe(clientFor("u1"));
