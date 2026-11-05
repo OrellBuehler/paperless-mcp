@@ -22,6 +22,18 @@ function apiVersionFrom(value: string | undefined): string {
 
 const apiVersion = apiVersionFrom(process.env.PAPERLESS_API_VERSION);
 
+function nonNegativeInt(value: string | undefined, fallback: number): number {
+  const raw = (value ?? "").trim();
+  return /^\d+$/.test(raw) ? Number(raw) : fallback;
+}
+
+const timeoutMs = nonNegativeInt(process.env.PAPERLESS_TIMEOUT_MS, 60000);
+
+const clientOptions = {
+  timeoutMs: timeoutMs > 2147483647 ? 60000 : timeoutMs,
+  maxRetries: Math.min(nonNegativeInt(process.env.PAPERLESS_MAX_RETRIES, 2), 10),
+};
+
 export const config = {
   baseUrl,
   adminToken,
@@ -34,7 +46,7 @@ export const config = {
   oauthEnabled: Boolean((process.env.MCP_OAUTH_ISSUER || "").trim()),
 };
 
-export const adminClient = new PaperlessClient(baseUrl, adminToken, apiVersion);
+export const adminClient = new PaperlessClient(baseUrl, adminToken, apiVersion, clientOptions);
 
 const clientCache = new Map<string, PaperlessClient>();
 const MAX_CACHE = 100;
@@ -47,7 +59,7 @@ export function clientFor(token: string): PaperlessClient {
     clientCache.set(token, existing);
     return existing;
   }
-  const client = new PaperlessClient(baseUrl, token, apiVersion);
+  const client = new PaperlessClient(baseUrl, token, apiVersion, clientOptions);
   if (clientCache.size >= MAX_CACHE) {
     const oldest = clientCache.keys().next().value;
     if (oldest !== undefined) clientCache.delete(oldest);
