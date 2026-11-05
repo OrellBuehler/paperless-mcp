@@ -2,6 +2,19 @@ import { describe, it, expect, vi, beforeAll, afterAll, beforeEach, afterEach } 
 import { createServer as createNodeServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { createHash } from "node:crypto";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import type { StateStore } from "../oauth-state.js";
 
 vi.stubEnv("PAPERLESS_URL", "https://p.example.com");
 vi.stubEnv("PAPERLESS_TOKEN", "admin-tok");
@@ -10,6 +23,7 @@ const { createHttpHandler } = await import("../http.js");
 const { config, clientFor } = await import("../config.js");
 const { createOAuth, oauthSettingsFromEnv, verifyPkce, decodeJwtPayload, DEFAULT_LIMITS } =
   await import("../oauth.js");
+const { createStateStore, stateStoreFromEnv } = await import("../oauth-state.js");
 
 const realFetch = globalThis.fetch;
 const INIT = JSON.stringify({
@@ -214,12 +228,14 @@ describe("OAuth mode", () => {
   let paperlessResponse: () => Response;
   const idpNonces = new Map<string, string>();
 
-  async function restart(limits = {}, overrides = {}) {
+  async function restart(limits = {}, overrides = {}, store: StateStore | null = null) {
     if (server) await close(server);
-    oauth = createOAuth({ ...settings, ...overrides }, "https://p.example.com", {
-      ...DEFAULT_LIMITS,
-      ...limits,
-    });
+    oauth = createOAuth(
+      { ...settings, ...overrides },
+      "https://p.example.com",
+      { ...DEFAULT_LIMITS, ...limits },
+      store,
+    );
     ({ server, base } = await listen(createHttpHandler(oauth)));
   }
 
@@ -893,5 +909,200 @@ describe("OAuth mode", () => {
     ).toBe(400);
     expect((await exchange({ ...params, code_verifier: "w".repeat(50) })).status).toBe(400);
     expect((await exchange(params)).status).toBe(200);
+  });
+
+  describe("persistence", () => {
+    const KEY = "correct horse battery staple";
+    let root: string;
+    let dir: string;
+    const store = (key = KEY) => createStateStore(dir, key);
+    const file = () => join(dir, "oauth-state.json");
+    const bearer = (t: unknown) => ({ authorization: `Bearer ${t}` });
+    const refreshWith = (client_id: string, refresh_token: unknown) =>
+      exchange({ grant_type: "refresh_token", refresh_token: String(refresh_token), client_id });
+    const backups = () => readdirSync(dir).filter((f) => f.startsWith("oauth-state.json.bak-"));
+
+    beforeEach(() => {
+      root = mkdtempSync(join(tmpdir(), "paperless-mcp-oauth-"));
+      dir = join(root, "data");
+    });
+
+    afterEach(() => {
+      oauth.flush();
+      vi.restoreAllMocks();
+      rmSync(root, { recursive: true, force: true });
+    });
+
+    it("restores clients and grants after a restart", async () => {
+      await restart({}, {}, store());
+      const { client_id, tokens } = await login();
+      oauth.flush();
+      await restart({}, {}, store());
+      expect(oauth.resolve(bearer(tokens.access_token))?.token).toBe("user-tok");
+      expect((await authorize(client_id)).status).toBe(200);
+      const r = await refreshWith(client_id, tokens.refresh_token);
+      expect(r.status).toBe(200);
+      expect(oauth.resolve(bearer((await r.json()).access_token))?.token).toBe("user-tok");
+    });
+
+    it("writes an encrypted 0600 file without plaintext tokens", async () => {
+      await restart({}, {}, store());
+      const { tokens } = await login();
+      oauth.flush();
+      expect(statSync(dir).mode & 0o777).toBe(0o700);
+      expect(statSync(file()).mode & 0o777).toBe(0o600);
+      expect(readdirSync(dir)).toEqual(["oauth-state.json"]);
+      const raw = readFileSync(file(), "utf8");
+      expect(JSON.parse(raw)).toMatchObject({ v: 1, alg: "aes-256-gcm", kdf: "scrypt" });
+      for (const secret of ["user-tok", tokens.access_token, tokens.refresh_token])
+        expect(raw).not.toContain(String(secret));
+      const plain = JSON.stringify(store().read());
+      expect(plain).toContain("user-tok");
+      expect(plain).not.toContain(String(tokens.access_token));
+      expect(plain).not.toContain(String(tokens.refresh_token));
+    });
+
+    it("coalesces writes", async () => {
+      const s = store();
+      const write = vi.spyOn(s, "write");
+      await restart({}, {}, s);
+      await registerClient();
+      await registerClient();
+      expect(write).not.toHaveBeenCalled();
+      await vi.waitFor(() => expect(write).toHaveBeenCalledOnce(), { timeout: 3000 });
+      oauth.flush();
+      expect(write).toHaveBeenCalledOnce();
+    });
+
+    it("moves the file aside and starts empty with a wrong key", async () => {
+      await restart({}, {}, store());
+      const { tokens } = await login();
+      oauth.flush();
+      const original = readFileSync(file(), "utf8");
+      const warn = vi.spyOn(console, "error").mockImplementation(() => {});
+      await restart({}, {}, store("another sufficiently long key"));
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining("wrong MCP_OAUTH_STATE_KEY"));
+      expect(oauth.resolve(bearer(tokens.access_token))).toBeNull();
+      expect(existsSync(file())).toBe(false);
+      expect(backups()).toHaveLength(1);
+      await registerClient();
+      oauth.flush();
+      expect(readFileSync(join(dir, backups()[0]), "utf8")).toBe(original);
+    });
+
+    it("moves corrupt or tampered files aside", async () => {
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      await restart({}, {}, store());
+      await registerClient();
+      oauth.flush();
+      const valid = JSON.parse(readFileSync(file(), "utf8"));
+      const data = Buffer.from(valid.data, "base64");
+      data[0] ^= 1;
+      for (const content of [
+        "{not json",
+        JSON.stringify({ ...valid, data: data.toString("base64") }),
+        JSON.stringify({ ...valid, v: 2 }),
+      ]) {
+        rmSync(dir, { recursive: true, force: true });
+        mkdirSync(dir);
+        writeFileSync(file(), content);
+        expect(store().read()).toBeNull();
+        expect(existsSync(file())).toBe(false);
+        expect(readFileSync(join(dir, backups()[0]), "utf8")).toBe(content);
+      }
+    });
+
+    it("drops expired tokens and grants on load", async () => {
+      await restart({}, {}, store());
+      vi.useFakeTimers({ toFake: ["Date"] });
+      const { client_id, tokens } = await login();
+      oauth.flush();
+      vi.setSystemTime(Date.now() + 3601 * 1000);
+      await restart({}, {}, store());
+      expect(oauth.resolve(bearer(tokens.access_token))).toBeNull();
+      const r = await refreshWith(client_id, tokens.refresh_token);
+      expect(r.status).toBe(200);
+      const next = await r.json();
+      vi.setSystemTime(Date.now() + 86400 * 1000);
+      await restart({}, {}, store());
+      expect(oauth.resolve(bearer(next.access_token))).toBeNull();
+      expect((await (await refreshWith(client_id, next.refresh_token)).json()).error).toBe(
+        "invalid_grant",
+      );
+      await registerClient();
+      oauth.flush();
+      expect((store().read() as { grants: unknown[] }).grants).toEqual([]);
+    });
+
+    it("persists revocations immediately", async () => {
+      await restart({}, {}, store());
+      const { client_id, tokens } = await login();
+      oauth.revokePaperlessToken("user-tok");
+      await restart({}, {}, store());
+      expect(oauth.resolve(bearer(tokens.access_token))).toBeNull();
+      expect((await refreshWith(client_id, tokens.refresh_token)).status).toBe(400);
+      expect((await authorize(client_id)).status).toBe(200);
+    });
+
+    it("persists revocation after authorization code reuse", async () => {
+      await restart({}, {}, store());
+      const { client_id } = await registerClient();
+      const back = await signIn(client_id);
+      const params = {
+        grant_type: "authorization_code",
+        code: back.searchParams.get("code")!,
+        code_verifier: verifier,
+        client_id,
+      };
+      const first = await (await exchange(params)).json();
+      expect((await exchange(params)).status).toBe(400);
+      await restart({}, {}, store());
+      expect(oauth.resolve(bearer(first.access_token))).toBeNull();
+    });
+
+    it("persists refresh token rotation immediately", async () => {
+      await restart({}, {}, store());
+      const { client_id, tokens } = await login();
+      const next = await (await refreshWith(client_id, tokens.refresh_token)).json();
+      await restart({}, {}, store());
+      expect(oauth.resolve(bearer(tokens.access_token))).toBeNull();
+      expect((await refreshWith(client_id, tokens.refresh_token)).status).toBe(400);
+      expect(oauth.resolve(bearer(next.access_token))?.token).toBe("user-tok");
+      expect((await refreshWith(client_id, next.refresh_token)).status).toBe(200);
+    });
+
+    it("respects limits on load, keeping clients with grants and the newest grants", async () => {
+      await restart({}, {}, store());
+      vi.useFakeTimers({ toFake: ["Date"] });
+      await registerClient();
+      const older = await login();
+      vi.setSystemTime(Date.now() + 1000);
+      const newer = await login();
+      oauth.flush();
+      await restart({ maxClients: 1 }, {}, store());
+      expect(oauth.resolve(bearer(newer.tokens.access_token))?.token).toBe("user-tok");
+      expect(oauth.resolve(bearer(older.tokens.access_token))).toBeNull();
+      expect((await authorize(older.client_id)).status).toBe(400);
+      expect((await rawRegister()).status).toBe(503);
+    });
+
+    it("keeps state in memory without MCP_OAUTH_STATE_KEY", async () => {
+      const warn = vi.spyOn(console, "error").mockImplementation(() => {});
+      expect(stateStoreFromEnv({ PAPERLESS_MCP_DATA: dir })).toBeNull();
+      expect(warn).toHaveBeenCalledOnce();
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining("MCP_OAUTH_STATE_KEY"));
+      await restart();
+      await login();
+      oauth.flush();
+      expect(existsSync(root) && readdirSync(root)).toEqual([]);
+    });
+
+    it("reads the key and data directory from the environment", () => {
+      const env = { PAPERLESS_MCP_DATA: dir, MCP_OAUTH_STATE_KEY: KEY };
+      expect(stateStoreFromEnv(env)?.path).toBe(file());
+      expect(() => stateStoreFromEnv({ ...env, MCP_OAUTH_STATE_KEY: "short" })).toThrow(
+        "at least 16",
+      );
+    });
   });
 });

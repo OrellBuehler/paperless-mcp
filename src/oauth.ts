@@ -2,6 +2,7 @@ import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { OAuthClientMetadataSchema } from "@modelcontextprotocol/sdk/shared/auth.js";
 import { checkResourceAllowed } from "@modelcontextprotocol/sdk/shared/auth-utils.js";
+import type { StateStore } from "./oauth-state.js";
 
 type Headers = Record<string, string | string[] | undefined>;
 
@@ -60,6 +61,15 @@ interface Grant {
   refreshKey?: string;
 }
 
+interface SavedGrant extends Grant {
+  accessExpires?: number;
+}
+
+interface SavedState {
+  clients?: Record<string, Client>;
+  grants?: SavedGrant[];
+}
+
 interface Code {
   grant: Grant;
   redirectUri: string;
@@ -95,6 +105,7 @@ const MAX_REDIRECT_URIS = 10;
 const MAX_URI_LENGTH = 2000;
 const MAX_NAME_LENGTH = 200;
 const MAX_PARAM_LENGTH = 1000;
+const WRITE_DELAY = 1000;
 const COOKIE_PREFIX = "paperless_mcp_oauth_";
 const LOCAL_HOSTS = ["localhost", "127.0.0.1", "[::1]"];
 
@@ -276,6 +287,7 @@ export function createOAuth(
   settings: OAuthSettings,
   paperlessUrl: string,
   limits: OAuthLimits = DEFAULT_LIMITS,
+  store: StateStore | null = null,
 ) {
   const resourceUrl = `${settings.publicUrl}/mcp`;
   const resourceMetadataUrl = `${settings.publicUrl}/.well-known/oauth-protected-resource/mcp`;
@@ -287,6 +299,8 @@ export function createOAuth(
   const access = new Map<string, Issued>();
   const refresh = new Map<string, Issued>();
   let discovery: Promise<Discovery> | null = null;
+  let dirty = false;
+  let timer: NodeJS.Timeout | null = null;
 
   const cookieName = (key: string) => `${COOKIE_PREFIX}${sha256(key).slice(0, 16)}`;
   const clearCookie = (key: string) => ({
@@ -320,6 +334,65 @@ export function createOAuth(
     return discovery;
   }
 
+  function snapshot(): SavedState {
+    const now = Date.now();
+    const grants: SavedGrant[] = [];
+    for (const { grant, expires } of refresh.values()) {
+      if (expires <= now) continue;
+      const a = grant.accessKey ? access.get(grant.accessKey) : undefined;
+      grants.push({ ...grant, accessExpires: a && a.expires > now ? a.expires : undefined });
+    }
+    return { clients: Object.fromEntries(clients), grants };
+  }
+
+  function restore(state: SavedState | null) {
+    if (!state) return;
+    const now = Date.now();
+    const grants = (Array.isArray(state.grants) ? state.grants : [])
+      .filter((g) => g && g.expires > now && g.refreshKey)
+      .sort((a, b) => b.expires - a.expires)
+      .slice(0, limits.maxTokens);
+    const saved = state.clients || {};
+    for (const id of [...grants.map((g) => g.clientId), ...Object.keys(saved)]) {
+      if (clients.size >= limits.maxClients) break;
+      if (Object.hasOwn(saved, id) && !clients.has(id)) clients.set(id, saved[id]);
+    }
+    for (const { accessExpires, ...grant } of grants) {
+      if (!clients.has(grant.clientId)) continue;
+      refresh.set(grant.refreshKey!, { grant, expires: grant.expires });
+      if (grant.accessKey && accessExpires && accessExpires > now)
+        access.set(grant.accessKey, { grant, expires: accessExpires });
+      else grant.accessKey = undefined;
+    }
+  }
+
+  function flush() {
+    if (timer) clearTimeout(timer);
+    timer = null;
+    if (!store || !dirty) return;
+    dirty = false;
+    try {
+      store.write(snapshot());
+    } catch (e) {
+      dirty = true;
+      console.error(
+        `paperless-mcp could not save OAuth state: ${e instanceof Error ? e.message : String(e)}`,
+      );
+    }
+  }
+
+  function persist(now = false) {
+    if (!store) return;
+    dirty = true;
+    if (now) flush();
+    else if (!timer) {
+      timer = setTimeout(flush, WRITE_DELAY);
+      timer.unref();
+    }
+  }
+
+  restore(store ? (store.read() as SavedState | null) : null);
+
   function clientHasRoom(): boolean {
     if (clients.size < limits.maxClients) return true;
     for (const map of [pending, codes, access, refresh]) sweep(map);
@@ -328,7 +401,8 @@ export function createOAuth(
     for (const map of [codes, access, refresh])
       for (const v of map.values()) active.add(v.grant.clientId);
     const cutoff = Date.now() - PENDING_TTL;
-    for (const [id, c] of clients) if (!active.has(id) && c.created <= cutoff) clients.delete(id);
+    for (const [id, c] of clients)
+      if (!active.has(id) && c.created <= cutoff && clients.delete(id)) persist();
     return clients.size < limits.maxClients;
   }
 
@@ -353,8 +427,10 @@ export function createOAuth(
   }
 
   function revoke(match: (grant: Grant) => boolean) {
+    let revoked = false;
     for (const map of [access, refresh])
-      for (const [k, v] of map) if (match(v.grant)) map.delete(k);
+      for (const [k, v] of map) if (match(v.grant) && map.delete(k)) revoked = true;
+    if (revoked) persist(true);
   }
 
   function revokePaperlessToken(token: string) {
@@ -470,6 +546,7 @@ export function createOAuth(
       secretHash: secret ? sha256(secret) : undefined,
       created: now,
     });
+    persist();
     json(res, 201, {
       ...meta,
       client_id: clientId,
@@ -796,6 +873,7 @@ export function createOAuth(
       }
       code.used = true;
       json(res, 200, issue(code.grant));
+      persist();
       return;
     }
     if (grantType === "refresh_token") {
@@ -805,7 +883,9 @@ export function createOAuth(
         invalidGrant("Invalid or expired refresh token");
         return;
       }
-      json(res, 200, issue(entry.grant));
+      const tokens = issue(entry.grant);
+      persist(true);
+      json(res, 200, tokens);
       return;
     }
     json(res, 400, { error: "unsupported_grant_type" });
@@ -847,6 +927,7 @@ export function createOAuth(
     consentOrigin,
     revokePaperlessToken,
     resourceMetadataUrl,
+    flush,
   };
 }
 

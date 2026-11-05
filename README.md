@@ -157,12 +157,13 @@ Set `PAPERLESS_API_VERSION=10` to opt into v10 once you are ready for those chan
 | `MCP_OAUTH_TOKEN_AUTH_METHOD`  | No              | `client_secret_post` or `client_secret_basic` for the IdP token request (default: picked from discovery, like Paperless)                                          |
 | `MCP_OAUTH_ACCESS_TOKEN_TTL`   | No              | Lifetime of issued access tokens in seconds (default: `3600`)                                                                                                     |
 | `MCP_OAUTH_REFRESH_TOKEN_TTL`  | No              | Maximum lifetime of a sign-in in seconds, counted from authorization; refreshing does not extend it (default: `2592000`, 30 days)                                 |
+| `MCP_OAUTH_STATE_KEY`          | No              | Secret (at least 16 characters) that encrypts OAuth state on disk so registrations and sign-ins survive restarts. Unset: in memory only                           |
 | `EMBEDDING_PROVIDER`           | No              | `openai` or `ollama` (default: `openai`)                                                                                                                          |
 | `OPENAI_API_KEY`               | If using OpenAI | Required for OpenAI embeddings                                                                                                                                    |
 | `OLLAMA_URL`                   | If using Ollama | Ollama server URL (default: `http://localhost:11434`)                                                                                                             |
 | `EMBEDDING_MODEL`              | No              | Model name (defaults per provider)                                                                                                                                |
 | `EMBEDDING_DIMENSIONS`         | No              | Vector dimensions (defaults per provider)                                                                                                                         |
-| `PAPERLESS_MCP_DATA`           | No              | Directory for the vector DB (default: `~/.paperless-mcp`)                                                                                                         |
+| `PAPERLESS_MCP_DATA`           | No              | Directory for the vector DB and OAuth state (default: `~/.paperless-mcp`)                                                                                         |
 
 ## Transports
 
@@ -265,8 +266,21 @@ Notes:
   Paperless API tokens still work through `X-Paperless-Token` (e.g. for service
   accounts). This way an expired OAuth token gets a proper `401` challenge
   instead of being passed to Paperless.
-- Client registrations and tokens live in memory. After a restart, clients have
-  to register and authorize again.
+- Without `MCP_OAUTH_STATE_KEY`, client registrations and tokens live in memory
+  (the server says so at startup): after a restart, clients have to register
+  and authorize again. Set it to a long random secret (e.g.
+  `openssl rand -base64 32`) to keep them in
+  `$PAPERLESS_MCP_DATA/oauth-state.json` (default `~/.paperless-mcp`). The file
+  is encrypted with AES-256-GCM using a key derived from the secret with scrypt,
+  and written atomically with mode `0600`. Access and refresh tokens are stored
+  only as SHA-256 hashes; users' Paperless tokens appear only inside the
+  encrypted payload. Sign-ins in progress and authorization codes are not saved.
+  Writes are batched (at most one per second) and flushed on `SIGTERM`/`SIGINT`;
+  revocations and refresh-token rotation are written immediately. If the file
+  can't be decrypted (wrong key or corrupt), the server logs a warning, moves it
+  to `oauth-state.json.bak-<timestamp>` and starts empty, so changing the key
+  signs everyone out. To recover from a mistyped key, rename the backup back
+  and restart with the right key.
 - A sign-in lasts at most `MCP_OAUTH_REFRESH_TOKEN_TTL` (30 days by default),
   counted from when the user authorized. Refreshing rotates tokens but doesn't
   extend that limit; after it the user signs in again.
@@ -335,7 +349,7 @@ The image already defaults to `MCP_TRANSPORT=http`, `PORT=3001`, and
 `PAPERLESS_MCP_DATA=/data`, so the only variables you must set are
 `PAPERLESS_URL` and `PAPERLESS_TOKEN` (plus `OPENAI_API_KEY` when semantic
 search is enabled). Mount a volume at `/data` to persist the embedding index
-across restarts.
+(and, with `MCP_OAUTH_STATE_KEY`, OAuth sign-ins) across restarts.
 
 LAN clients connect to `http://<host>:3001/mcp` with their own Paperless API
 token. Run `sync_embeddings` once with the admin token to build the shared
