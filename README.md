@@ -5,6 +5,8 @@
 [![license](https://img.shields.io/npm/l/@orellbuehler/paperless-mcp)](LICENSE)
 [![node](https://img.shields.io/node/v/@orellbuehler/paperless-mcp)](package.json)
 
+**Website:** <https://orellbuehler.github.io/paperless-mcp/>
+
 Connect AI agents to [Paperless-ngx](https://docs.paperless-ngx.com/). This [Model Context Protocol](https://modelcontextprotocol.io/) server exposes the Paperless-ngx REST API as 115+ tools, so assistants like Claude can search, upload, tag, and organize your documents — with optional semantic search over your whole archive using local vector embeddings.
 
 Works with any MCP client: Claude Code, Claude Desktop, or your own agent.
@@ -136,6 +138,30 @@ All tools are registered by default. To save model context or lock the server do
 - `PAPERLESS_DISABLED_TOOLS=delete_document,empty_trash` skips individual tools.
 
 The three combine, and apply to both transports. If together they leave no tools at all, the server exits at startup with an error.
+
+## Prompts and resources
+
+Besides tools, the server exposes MCP prompts (reusable task instructions your client can offer as slash commands) and read-only resources (compact lookups agents can load as context).
+
+| Prompt           | Arguments                          | What it does                                                                                          |
+| ---------------- | ---------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `triage_inbox`   | —                                  | Proposes a correspondent, document type and tags for inbox documents; applies only after you confirm  |
+| `tax_prep`       | `year`                             | Uses `yearly_document_check` to spot missing recurring documents and gathers the year's tax documents |
+| `monthly_review` | `month` (`YYYY-MM`, default: last) | Overview of a month, unclassified documents and action items                                          |
+| `find_document`  | `description`                      | Search strategy combining filters, full-text search and `semantic_search` when enabled                |
+| `cleanup_tags`   | —                                  | Finds unused or near-duplicate tags and proposes merges; never deletes without confirmation           |
+
+| Resource                     | Contents                                                                                  |
+| ---------------------------- | ----------------------------------------------------------------------------------------- |
+| `paperless://tags`           | id, name, color, inbox flag, parent, document count                                       |
+| `paperless://correspondents` | id, name, document count, last correspondence                                             |
+| `paperless://document-types` | id, name, document count                                                                  |
+| `paperless://storage-paths`  | id, name, path template, document count                                                   |
+| `paperless://custom-fields`  | id, name, data type, extra data (e.g. select options), count                              |
+| `paperless://saved-views`    | id, name, filter rules, sort order                                                        |
+| `paperless://documents/{id}` | Template: one document's full metadata plus its OCR content (capped at 20,000 characters) |
+
+Resources are fetched across all pages on every read and run with the requesting user's token, so in HTTP mode each user only sees their own objects.
 
 ## API Versioning
 

@@ -12,6 +12,8 @@ import { registerDocumentTools } from "./tools/documents.js";
 import { registerMailTools } from "./tools/mail.js";
 import { registerSharingTools } from "./tools/sharing.js";
 import { registerSystemTools } from "./tools/system.js";
+import { registerPrompts } from "./tools/prompts.js";
+import { registerResources } from "./tools/resources.js";
 
 export const version: string = JSON.parse(
   readFileSync(new URL("../package.json", import.meta.url), "utf8"),
@@ -59,6 +61,8 @@ async function registerTools(server: McpServer, client: PaperlessClient) {
 export async function createServer(client: PaperlessClient): Promise<McpServer> {
   const server = new McpServer({ name: "paperless-mcp", version });
   await registerTools(server, client);
+  registerPrompts(server);
+  registerResources(server, client);
   return server;
 }
 
