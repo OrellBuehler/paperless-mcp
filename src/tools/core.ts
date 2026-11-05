@@ -1,8 +1,17 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { readFile } from "node:fs/promises";
-import { buildQS, ok, err, summarizeDocs } from "../paperless/format.js";
+import { buildQS, ok, err, image, summarizeDocs } from "../paperless/format.js";
 import type { PaperlessClient } from "../paperless/client.js";
+
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+const IMAGE_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"];
+
+function imageTooLarge(size: number) {
+  return new Error(
+    `image is ${size} bytes, over the ${MAX_IMAGE_BYTES} byte limit; use get_document_thumbnail for a smaller preview`,
+  );
+}
 
 const permissionGrant = z.object({
   users: z.array(z.number()).optional().describe("User IDs"),
@@ -216,7 +225,7 @@ export function registerCoreTools(server: McpServer, client: PaperlessClient) {
 
   server.tool(
     "download_document",
-    "Download a document's content as text (only works for text-based documents)",
+    "Download a document's content. Text files are returned as text and PNG/JPEG/GIF/WebP images (up to 5 MB) as image content; image documents are usually archived as PDF, so pass original: true to get the image; other binary files such as PDFs return only their size. For PDFs use get_document_thumbnail to see the first page, find_document_pages to locate text, or get_document for the OCR text.",
     {
       id: z.number().describe("Document ID"),
       original: z.boolean().optional().describe("Download original instead of archived version"),
@@ -228,6 +237,17 @@ export function registerCoreTools(server: McpServer, client: PaperlessClient) {
         const ct = res.headers.get("content-type") || "";
         if (ct.includes("text") || ct.includes("json") || ct.includes("xml")) {
           return ok({ content_type: ct, content: await res.text() });
+        }
+        const mime = ct.split(";")[0].trim().toLowerCase();
+        if (IMAGE_TYPES.includes(mime)) {
+          const declared = Number(res.headers.get("content-length") || 0);
+          if (declared > MAX_IMAGE_BYTES) {
+            await res.body?.cancel();
+            throw imageTooLarge(declared);
+          }
+          const buf = await res.arrayBuffer();
+          if (buf.byteLength > MAX_IMAGE_BYTES) throw imageTooLarge(buf.byteLength);
+          return image(buf, mime);
         }
         const buf = await res.arrayBuffer();
         return ok({
