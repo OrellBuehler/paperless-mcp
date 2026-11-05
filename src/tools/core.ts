@@ -20,6 +20,68 @@ const ownerField = z
 const setPermissionsField = permissionMap
   .optional()
   .describe("Grant view (read) and change (edit) access to users and groups");
+const triggerSourceField = z.enum([
+  "scheduled",
+  "web_ui",
+  "api_upload",
+  "folder_consume",
+  "email_consume",
+  "system",
+  "manual",
+]);
+const V9_TASK_NAMES: Record<string, string> = {
+  sanity_check: "check_sanity",
+  llm_index: "llmindex_update",
+};
+const V9_TRIGGER_TYPES: Record<z.infer<typeof triggerSourceField>, string> = {
+  scheduled: "scheduled_task",
+  system: "auto_task",
+  folder_consume: "auto_task",
+  email_consume: "auto_task",
+  web_ui: "manual_task",
+  api_upload: "manual_task",
+  manual: "manual_task",
+};
+
+function withVisibility(ids: unknown, id: number, show: boolean | undefined): unknown[] {
+  const list = Array.isArray(ids) ? ids : [];
+  if (show === undefined) return list;
+  const rest = list.filter((v) => Number(v) !== id);
+  return show ? [...rest, id] : rest;
+}
+
+async function setSavedViewVisibility(
+  client: PaperlessClient,
+  id: number,
+  {
+    show_on_dashboard,
+    show_in_sidebar,
+  }: { show_on_dashboard?: boolean; show_in_sidebar?: boolean },
+) {
+  const { settings = {} } = (await client.fetch("/api/ui_settings/")) as {
+    settings?: Record<string, unknown>;
+  };
+  const savedViews = (settings.saved_views ?? {}) as Record<string, unknown>;
+  const dashboard = withVisibility(savedViews.dashboard_views_visible_ids, id, show_on_dashboard);
+  const sidebar = withVisibility(savedViews.sidebar_views_visible_ids, id, show_in_sidebar);
+  await client.fetch("/api/ui_settings/", {
+    method: "POST",
+    body: JSON.stringify({
+      settings: {
+        ...settings,
+        saved_views: {
+          ...savedViews,
+          dashboard_views_visible_ids: dashboard,
+          sidebar_views_visible_ids: sidebar,
+        },
+      },
+    }),
+  });
+  return {
+    show_on_dashboard: dashboard.some((v) => Number(v) === id),
+    show_in_sidebar: sidebar.some((v) => Number(v) === id),
+  };
+}
 
 export function registerCoreTools(server: McpServer, client: PaperlessClient) {
   // --- System ---
@@ -45,13 +107,44 @@ export function registerCoreTools(server: McpServer, client: PaperlessClient) {
     },
   );
 
-  server.tool("list_tasks", "List background tasks (consumption, etc.)", {}, async () => {
-    try {
-      return ok(await client.fetch("/api/tasks/"));
-    } catch (e) {
-      return err(e);
-    }
-  });
+  server.tool(
+    "list_tasks",
+    "List background tasks (consumption, etc.). The response is passed through in the shape of the negotiated API version: v9 returns a plain array with task_name, type and uppercase status; v10 (Paperless-ngx 3.0+) returns a paginated { count, next, previous, results } with task_type, trigger_source and lowercase status. Filters use v10 names and are translated for v9.",
+    {
+      task_id: z.string().optional().describe("Celery task UUID, e.g. as returned by upload"),
+      task_type: z
+        .string()
+        .optional()
+        .describe("e.g. consume_file, train_classifier, sanity_check, index_optimize, llm_index"),
+      trigger_source: triggerSourceField
+        .optional()
+        .describe("What started the task (v9 only distinguishes scheduled/auto/manual)"),
+      status: z
+        .string()
+        .optional()
+        .describe(
+          "pending, started, success, failure or revoked on Paperless-ngx 3.x; uppercase (e.g. SUCCESS) on 2.x",
+        ),
+      acknowledged: z.boolean().optional(),
+      page: z.number().optional().describe("v10 only; v9 is unpaginated"),
+      page_size: z.number().optional().describe("v10 only; v9 is unpaginated"),
+    },
+    async ({ task_type, trigger_source, page, page_size, ...params }) => {
+      try {
+        const v10 = (await client.resolveApiVersion()) >= 10;
+        const query = v10
+          ? { ...params, task_type, trigger_source, page, page_size }
+          : {
+              ...params,
+              task_name: task_type && (V9_TASK_NAMES[task_type] ?? task_type),
+              type: trigger_source && V9_TRIGGER_TYPES[trigger_source],
+            };
+        return ok(await client.fetch(`/api/tasks/${buildQS(query)}`));
+      } catch (e) {
+        return err(e);
+      }
+    },
+  );
 
   // --- Search ---
 
@@ -759,7 +852,7 @@ export function registerCoreTools(server: McpServer, client: PaperlessClient) {
 
   server.tool(
     "create_saved_view",
-    "Create a new saved view",
+    "Create a new saved view. On API v10+ (Paperless-ngx 3.0+) show_on_dashboard/show_in_sidebar are no longer saved-view fields; they are applied to the current user's UI settings (settings.saved_views.dashboard_views_visible_ids / sidebar_views_visible_ids) like the web UI does.",
     {
       name: z.string(),
       filter_rules: z
@@ -775,12 +868,20 @@ export function registerCoreTools(server: McpServer, client: PaperlessClient) {
     },
     async (body) => {
       try {
-        return ok(
-          await client.fetch("/api/saved_views/", {
-            method: "POST",
-            body: JSON.stringify(body),
-          }),
-        );
+        const { show_on_dashboard, show_in_sidebar, ...rest } = body;
+        const v10 = (await client.resolveApiVersion()) >= 10;
+        const view = (await client.fetch("/api/saved_views/", {
+          method: "POST",
+          body: JSON.stringify(v10 ? rest : body),
+        })) as { id: number };
+        if (!v10) return ok(view);
+        return ok({
+          ...view,
+          ...(await setSavedViewVisibility(client, view.id, {
+            show_on_dashboard,
+            show_in_sidebar,
+          })),
+        });
       } catch (e) {
         return err(e);
       }
@@ -789,7 +890,7 @@ export function registerCoreTools(server: McpServer, client: PaperlessClient) {
 
   server.tool(
     "update_saved_view",
-    "Update an existing saved view (partial update)",
+    "Update an existing saved view (partial update). On API v10+ show_on_dashboard/show_in_sidebar are applied to the current user's UI settings instead of the saved view.",
     {
       id: z.number(),
       name: z.string().optional(),
@@ -804,12 +905,19 @@ export function registerCoreTools(server: McpServer, client: PaperlessClient) {
     },
     async ({ id, ...body }) => {
       try {
-        return ok(
-          await client.fetch(`/api/saved_views/${id}/`, {
-            method: "PATCH",
-            body: JSON.stringify(body),
-          }),
-        );
+        const { show_on_dashboard, show_in_sidebar, ...rest } = body;
+        const v10 = (await client.resolveApiVersion()) >= 10;
+        const view = await client.fetch(`/api/saved_views/${id}/`, {
+          method: "PATCH",
+          body: JSON.stringify(v10 ? rest : body),
+        });
+        if (!v10 || (show_on_dashboard === undefined && show_in_sidebar === undefined)) {
+          return ok(view);
+        }
+        return ok({
+          ...(view as object),
+          ...(await setSavedViewVisibility(client, id, { show_on_dashboard, show_in_sidebar })),
+        });
       } catch (e) {
         return err(e);
       }
