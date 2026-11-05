@@ -137,15 +137,15 @@ Besides tools, the server exposes MCP prompts (reusable task instructions your c
 | `find_document`  | `description`                      | Search strategy combining filters, full-text search and `semantic_search` when enabled                |
 | `cleanup_tags`   | —                                  | Finds unused or near-duplicate tags and proposes merges; never deletes without confirmation           |
 
-| Resource                     | Contents                                                     |
-| ---------------------------- | ------------------------------------------------------------ |
-| `paperless://tags`           | id, name, color, inbox flag, parent, document count          |
-| `paperless://correspondents` | id, name, document count, last correspondence                |
-| `paperless://document-types` | id, name, document count                                     |
-| `paperless://storage-paths`  | id, name, path template, document count                      |
-| `paperless://custom-fields`  | id, name, data type, extra data (e.g. select options), count |
-| `paperless://saved-views`    | id, name, filter rules, sort order                           |
-| `paperless://documents/{id}` | Template: one document's full metadata plus its OCR content  |
+| Resource                     | Contents                                                                                  |
+| ---------------------------- | ----------------------------------------------------------------------------------------- |
+| `paperless://tags`           | id, name, color, inbox flag, parent, document count                                       |
+| `paperless://correspondents` | id, name, document count, last correspondence                                             |
+| `paperless://document-types` | id, name, document count                                                                  |
+| `paperless://storage-paths`  | id, name, path template, document count                                                   |
+| `paperless://custom-fields`  | id, name, data type, extra data (e.g. select options), count                              |
+| `paperless://saved-views`    | id, name, filter rules, sort order                                                        |
+| `paperless://documents/{id}` | Template: one document's full metadata plus its OCR content (capped at 20,000 characters) |
 
 Resources are fetched across all pages on every read and run with the requesting user's token, so in HTTP mode each user only sees their own objects.
 

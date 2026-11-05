@@ -6,8 +6,8 @@ function user(text: string) {
 }
 
 function previousMonth(now = new Date()) {
-  const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1));
-  return { year: d.getUTCFullYear(), month: d.getUTCMonth() + 1 };
+  const d = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  return { year: d.getFullYear(), month: d.getMonth() + 1 };
 }
 
 export function registerPrompts(server: McpServer) {
@@ -75,7 +75,7 @@ This is read-only: do not modify any document unless I ask.`);
 
 1. Call \`monthly_summary\` with year ${year} and month ${m} for an overview.
 2. Call \`list_documents\` with added__date__gte ${start} and added__date__lt ${end} to see what arrived. Flag documents still in the inbox or missing a correspondent, document type or tags.
-3. Read the relevant ones with \`get_documents\` and pick out action items: bills to pay, deadlines, contracts to renew, anything that needs a reply.
+3. Read the relevant ones with \`get_documents\` (set max_content_length, e.g. 5000) and pick out action items: bills to pay, deadlines, contracts to renew, anything that needs a reply.
 4. Summarize: counts by correspondent and document type, unclassified documents with a proposed classification, and the action items with due dates.
 
 Do not change anything without my confirmation.`);
@@ -111,7 +111,8 @@ Do not change anything without my confirmation.`);
 1. Read the paperless://tags resource (or call \`list_tags\`) to get every tag with its document count.
 2. Identify unused tags (document_count 0) and near-duplicates: case, spelling, singular/plural or language variants, and tags that duplicate a correspondent or document type.
 3. Propose a plan: for each merge, the tag to keep and the tags to retire; list unused tags as deletion candidates. Never touch inbox tags (is_inbox_tag).
-4. Wait for my explicit confirmation of each item. To merge, find the documents with \`list_documents\` and tags__id__all set to the old tag, then call \`bulk_edit_documents\` with method modify_tags and parameters { add_tags: [keep], remove_tags: [old] }. Verify the old tag has no documents left.
-5. Only call \`delete_tag\` for a tag whose deletion I confirmed. Never delete without confirmation.`),
+4. Wait for my explicit confirmation of each item. To merge, find the documents with \`list_documents\` and tags__id__all set to the old tag (it returns one page, so set page_size or page through all results), then call \`bulk_edit_documents\` with method modify_tags and parameters { add_tags: [keep], remove_tags: [old] }. Verify the old tag has no documents left.
+5. Before proposing to delete a tag, check what still references it: saved view filter rules (paperless://saved-views or \`list_saved_views\`), mail rules (\`list_mail_rules\`) and workflows (\`list_workflows\`). Report those references and update them first if I agree.
+6. Only call \`delete_tag\` for a tag whose deletion I confirmed. Never delete without confirmation.`),
   );
 }

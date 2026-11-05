@@ -1,7 +1,7 @@
 import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { PaperlessClient } from "../paperless/client.js";
 
-const LISTS: { name: string; path: string; description: string; fields: string[] }[] = [
+const LISTS = [
   {
     name: "tags",
     path: "/api/tags/",
@@ -40,6 +40,8 @@ const LISTS: { name: string; path: string; description: string; fields: string[]
   },
 ];
 
+const MAX_CONTENT = 20000;
+
 function pick(obj: Record<string, unknown>, fields: string[]) {
   return Object.fromEntries(fields.filter((f) => f in obj).map((f) => [f, obj[f]]));
 }
@@ -70,13 +72,22 @@ export function registerResources(server: McpServer, client: PaperlessClient) {
     "document",
     new ResourceTemplate("paperless://documents/{id}", { list: undefined }),
     {
-      description: "A single document's metadata plus its OCR text content",
+      description: `A single document's metadata plus its OCR text content (truncated to ${MAX_CONTENT} characters; use get_document_content for the full text)`,
       mimeType: "application/json",
     },
     async (uri, { id }) => {
       const docId = String(id);
       if (!/^\d+$/.test(docId)) throw new Error(`Invalid document id: ${docId}`);
-      return json(uri, await client.fetch(`/api/documents/${docId}/`));
+      const doc = (await client.fetch(`/api/documents/${docId}/`)) as Record<string, unknown>;
+      if (typeof doc.content === "string" && doc.content.length > MAX_CONTENT) {
+        return json(uri, {
+          ...doc,
+          content: doc.content.slice(0, MAX_CONTENT),
+          content_length: doc.content.length,
+          content_truncated: true,
+        });
+      }
+      return json(uri, doc);
     },
   );
 }

@@ -77,7 +77,7 @@ describe("prompts", () => {
 
   it("defaults monthly_review to the previous month", async () => {
     vi.useFakeTimers({ toFake: ["Date"] });
-    vi.setSystemTime(new Date("2026-01-15T12:00:00Z"));
+    vi.setSystemTime(new Date(2026, 0, 1, 0, 30));
     try {
       const client = await connect();
       const text = promptText(await client.getPrompt({ name: "monthly_review" }));
@@ -203,6 +203,21 @@ describe("resources", () => {
     const content = res.contents[0] as { uri: string; text: string };
     expect(content.uri).toBe("paperless://documents/42");
     expect(JSON.parse(content.text)).toEqual(doc);
+  });
+
+  it("truncates long document content", async () => {
+    const content = "a".repeat(20005);
+    mockFetch.mockResolvedValueOnce(mockJson({ id: 5, title: "Big", content }));
+    const client = await connect();
+    const res = await client.readResource({ uri: "paperless://documents/5" });
+    const doc = JSON.parse((res.contents[0] as { text: string }).text);
+    expect(doc).toEqual({
+      id: 5,
+      title: "Big",
+      content: "a".repeat(20000),
+      content_length: 20005,
+      content_truncated: true,
+    });
   });
 
   it("rejects non-numeric document ids", async () => {
