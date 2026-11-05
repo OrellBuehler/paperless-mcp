@@ -98,6 +98,7 @@ export const toolAnnotations: Record<string, ToolAnnotations> = {
   update_workflow: overwrite,
 
   get_document_history: read,
+  get_document_thumbnail: read,
   get_document_ai_suggestions: readExternal,
   get_document_root: read,
   upload_document_version: create,
