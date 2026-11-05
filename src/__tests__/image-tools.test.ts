@@ -50,6 +50,14 @@ describe("get_document_thumbnail", () => {
     expect(result.content[0].mimeType).toBe("image/png");
   });
 
+  it("falls back to image/webp when no content type is sent", async () => {
+    const res = new Response(bytes);
+    res.headers.delete("content-type");
+    vi.spyOn(client, "download").mockResolvedValue(res);
+    const result = await tools.get("get_document_thumbnail")!({ id: 7 });
+    expect(result.content[0].mimeType).toBe("image/webp");
+  });
+
   it("returns an error on non-2xx", async () => {
     vi.spyOn(client, "download").mockResolvedValue(
       new Response("nope", { status: 404, statusText: "Not Found" }),
@@ -74,6 +82,26 @@ describe("download_document images", () => {
     expect(result.content).toEqual([
       { type: "image", data: bytes.toString("base64"), mimeType: "image/jpeg" },
     ]);
+  });
+
+  it("strips parameters from the image content type", async () => {
+    vi.spyOn(client, "download").mockResolvedValue(
+      new Response(bytes, { headers: { "content-type": "image/png; charset=binary" } }),
+    );
+    const result = await tools.get("download_document")!({ id: 3 });
+    expect(result.content[0]).toMatchObject({ type: "image", mimeType: "image/png" });
+  });
+
+  it("returns the binary summary for unsupported image types like TIFF", async () => {
+    vi.spyOn(client, "download").mockResolvedValue(
+      new Response(bytes, { headers: { "content-type": "image/tiff" } }),
+    );
+    const result = await tools.get("download_document")!({ id: 3, original: true });
+    expect(result.content[0].type).toBe("text");
+    expect(JSON.parse(result.content[0].text!)).toMatchObject({
+      content_type: "image/tiff",
+      size: bytes.length,
+    });
   });
 
   it("rejects images over the size cap", async () => {

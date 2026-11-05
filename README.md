@@ -95,7 +95,7 @@ Semantic search is off by default. To enable it, add `"EMBEDDINGS_ENABLED": "tru
 
 > **Note:** `list_documents` and `search_documents` return document metadata only (no OCR text) to keep responses small. Use `get_document` (single) or `get_documents` (batch) to retrieve full content.
 >
-> For vision-capable models, `get_document_thumbnail` returns a document's first-page preview as an image, and `download_document` returns image documents (up to 5 MB; pass `original: true`, since images are usually archived as PDF) as image content.
+> For vision-capable models, `get_document_thumbnail` returns a document's first-page preview as an image, and `download_document` returns PNG, JPEG, GIF and WebP documents as image content (pass `original: true`, since images are usually archived as PDF). Images over 5 MB return an error pointing to `get_document_thumbnail`; other image types such as TIFF, BMP and HEIC get the binary summary.
 >
 > `list_documents` supports inclusive and exclusive date ranges (`created`/`added` `__date__gt|gte|lt|lte`), multi-value filters (`correspondent__id__in`, `document_type__id__in`, `tags__id__in|all`), and `custom_field_query` (JSON expressions like `["Amount", "gt", 100]`) for filtering by custom field values. `yearly_document_check` compares a year against the previous one per correspondent + document type — useful for spotting missing recurring documents (e.g. when preparing a tax report).
 >
