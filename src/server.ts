@@ -10,6 +10,8 @@ import { registerDocumentTools } from "./tools/documents.js";
 import { registerMailTools } from "./tools/mail.js";
 import { registerSharingTools } from "./tools/sharing.js";
 import { registerSystemTools } from "./tools/system.js";
+import { registerPrompts } from "./tools/prompts.js";
+import { registerResources } from "./tools/resources.js";
 
 export async function createServer(client: PaperlessClient): Promise<McpServer> {
   const server = new McpServer({ name: "paperless-mcp", version: "1.0.0" });
@@ -22,6 +24,8 @@ export async function createServer(client: PaperlessClient): Promise<McpServer> 
   registerMailTools(server, client);
   registerSharingTools(server, client);
   registerSystemTools(server, client);
+  registerPrompts(server);
+  registerResources(server, client);
   if (config.embeddingsEnabled) {
     const { registerSearchTools } = await import("./tools/search.js");
     registerSearchTools(server, client);

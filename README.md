@@ -125,6 +125,30 @@ These call endpoints that only exist on Paperless-ngx 3.0 and later. On older se
 
 > On Paperless-ngx 2.x, use `bulk_edit_documents` with `method: "rotate" | "merge" | "split"` instead of the dedicated document-editing tools. Both paths still work on 3.x.
 
+## Prompts and resources
+
+Besides tools, the server exposes MCP prompts (reusable task instructions your client can offer as slash commands) and read-only resources (compact lookups agents can load as context).
+
+| Prompt           | Arguments                          | What it does                                                                                          |
+| ---------------- | ---------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `triage_inbox`   | —                                  | Proposes a correspondent, document type and tags for inbox documents; applies only after you confirm  |
+| `tax_prep`       | `year`                             | Uses `yearly_document_check` to spot missing recurring documents and gathers the year's tax documents |
+| `monthly_review` | `month` (`YYYY-MM`, default: last) | Overview of a month, unclassified documents and action items                                          |
+| `find_document`  | `description`                      | Search strategy combining filters, full-text search and `semantic_search` when enabled                |
+| `cleanup_tags`   | —                                  | Finds unused or near-duplicate tags and proposes merges; never deletes without confirmation           |
+
+| Resource                     | Contents                                                     |
+| ---------------------------- | ------------------------------------------------------------ |
+| `paperless://tags`           | id, name, color, inbox flag, parent, document count          |
+| `paperless://correspondents` | id, name, document count, last correspondence                |
+| `paperless://document-types` | id, name, document count                                     |
+| `paperless://storage-paths`  | id, name, path template, document count                      |
+| `paperless://custom-fields`  | id, name, data type, extra data (e.g. select options), count |
+| `paperless://saved-views`    | id, name, filter rules, sort order                           |
+| `paperless://documents/{id}` | Template: one document's full metadata plus its OCR content  |
+
+Resources are fetched across all pages on every read and run with the requesting user's token, so in HTTP mode each user only sees their own objects.
+
 ## API Versioning
 
 Paperless-ngx negotiates its REST API version through the `Accept` header. This server pins **API v9** by default, which is what every tool above is written against and what both 2.x and 3.x servers accept.
