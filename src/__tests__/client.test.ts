@@ -171,6 +171,18 @@ describe("API version pinning", () => {
     await new PaperlessClient("https://p.example.com", "tok", "").fetch("/api/tasks/");
     expect((fetchMock.mock.calls[0][1].headers as Record<string, string>).Accept).toBeUndefined();
   });
+  it("lets a per-request Accept header override the pinned version", async () => {
+    fetchMock.mockResolvedValue(jsonRes({}));
+    const c = new PaperlessClient("https://p.example.com", "tok", "10");
+    const headers = { Accept: "application/json; version=9" };
+    await c.fetch("/api/saved_views/", { method: "POST", body: "{}", headers });
+    await c.download("/api/documents/1/download/", { headers });
+    for (const call of fetchMock.mock.calls) {
+      expect((call[1].headers as Record<string, string>).Accept).toBe(
+        "application/json; version=9",
+      );
+    }
+  });
   it("pins the version on downloads and uploads too", async () => {
     fetchMock.mockResolvedValue({ ok: true, status: 200 });
     const c = new PaperlessClient("https://p.example.com", "tok");

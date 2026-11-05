@@ -2,6 +2,7 @@ import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { OAuthClientMetadataSchema } from "@modelcontextprotocol/sdk/shared/auth.js";
 import { checkResourceAllowed } from "@modelcontextprotocol/sdk/shared/auth-utils.js";
+import type { StateStore } from "./oauth-state.js";
 
 type Headers = Record<string, string | string[] | undefined>;
 
@@ -60,6 +61,15 @@ interface Grant {
   refreshKey?: string;
 }
 
+interface SavedGrant extends Grant {
+  accessExpires?: number;
+}
+
+interface SavedState {
+  clients?: Record<string, Client>;
+  grants?: SavedGrant[];
+}
+
 interface Code {
   grant: Grant;
   redirectUri: string;
@@ -95,6 +105,8 @@ const MAX_REDIRECT_URIS = 10;
 const MAX_URI_LENGTH = 2000;
 const MAX_NAME_LENGTH = 200;
 const MAX_PARAM_LENGTH = 1000;
+const WRITE_DELAY = 1000;
+const RETRY_DELAY = 10_000;
 const COOKIE_PREFIX = "paperless_mcp_oauth_";
 const LOCAL_HOSTS = ["localhost", "127.0.0.1", "[::1]"];
 
@@ -188,6 +200,43 @@ function bearerToken(headers: Headers): string | null {
   return m ? (m[1] || "").trim() : null;
 }
 
+function isString(value: unknown): value is string {
+  return typeof value === "string";
+}
+
+function optional(value: unknown, check: (v: unknown) => boolean): boolean {
+  return value === undefined || value === null || check(value);
+}
+
+function validClient(value: unknown): value is Client {
+  const c = value as Client | null;
+  return (
+    !!c &&
+    typeof c === "object" &&
+    isString(c.name) &&
+    Array.isArray(c.redirectUris) &&
+    c.redirectUris.every(isString) &&
+    Number.isFinite(c.created) &&
+    optional(c.secretHash, isString)
+  );
+}
+
+function validGrant(value: unknown): value is SavedGrant {
+  const g = value as SavedGrant | null;
+  return (
+    !!g &&
+    typeof g === "object" &&
+    isString(g.id) &&
+    isString(g.clientId) &&
+    isString(g.paperlessToken) &&
+    isString(g.refreshKey) &&
+    Number.isFinite(g.expires) &&
+    optional(g.scope, isString) &&
+    optional(g.accessKey, isString) &&
+    optional(g.accessExpires, Number.isFinite)
+  );
+}
+
 function sweep(map: Map<string, { expires: number }>) {
   const now = Date.now();
   for (const [k, v] of map) if (v.expires <= now) map.delete(k);
@@ -276,6 +325,7 @@ export function createOAuth(
   settings: OAuthSettings,
   paperlessUrl: string,
   limits: OAuthLimits = DEFAULT_LIMITS,
+  store: StateStore | null = null,
 ) {
   const resourceUrl = `${settings.publicUrl}/mcp`;
   const resourceMetadataUrl = `${settings.publicUrl}/.well-known/oauth-protected-resource/mcp`;
@@ -287,6 +337,8 @@ export function createOAuth(
   const access = new Map<string, Issued>();
   const refresh = new Map<string, Issued>();
   let discovery: Promise<Discovery> | null = null;
+  let dirty = false;
+  let timer: NodeJS.Timeout | null = null;
 
   const cookieName = (key: string) => `${COOKIE_PREFIX}${sha256(key).slice(0, 16)}`;
   const clearCookie = (key: string) => ({
@@ -320,6 +372,91 @@ export function createOAuth(
     return discovery;
   }
 
+  function snapshot(): SavedState {
+    const now = Date.now();
+    const grants: SavedGrant[] = [];
+    for (const { grant, expires } of refresh.values()) {
+      if (expires <= now) continue;
+      const a = grant.accessKey ? access.get(grant.accessKey) : undefined;
+      grants.push({ ...grant, accessExpires: a && a.expires > now ? a.expires : undefined });
+    }
+    return { clients: Object.fromEntries(clients), grants };
+  }
+
+  function restore(state: SavedState | null) {
+    if (!state || typeof state !== "object") return;
+    const now = Date.now();
+    const grants = (Array.isArray(state.grants) ? state.grants : [])
+      .filter((g) => validGrant(g) && g.expires > now)
+      .sort((a, b) => b.expires - a.expires)
+      .slice(0, limits.maxTokens);
+    const saved =
+      state.clients && typeof state.clients === "object" && !Array.isArray(state.clients)
+        ? state.clients
+        : {};
+    for (const id of [...grants.map((g) => g.clientId), ...Object.keys(saved)]) {
+      if (clients.size >= limits.maxClients) break;
+      const c = Object.hasOwn(saved, id) ? saved[id] : undefined;
+      if (!clients.has(id) && validClient(c))
+        clients.set(id, {
+          name: c.name,
+          redirectUris: c.redirectUris,
+          secretHash: c.secretHash ?? undefined,
+          created: c.created,
+        });
+    }
+    for (const g of grants) {
+      if (!clients.has(g.clientId)) continue;
+      const grant: Grant = {
+        id: g.id,
+        clientId: g.clientId,
+        paperlessToken: g.paperlessToken,
+        scope: g.scope ?? undefined,
+        expires: g.expires,
+        refreshKey: g.refreshKey,
+      };
+      refresh.set(g.refreshKey!, { grant, expires: g.expires });
+      if (g.accessKey && g.accessExpires && g.accessExpires > now) {
+        grant.accessKey = g.accessKey;
+        access.set(g.accessKey, { grant, expires: g.accessExpires });
+      }
+    }
+  }
+
+  function schedule(delay: number) {
+    if (timer) return;
+    timer = setTimeout(flush, delay);
+    timer.unref();
+  }
+
+  function flush(): boolean {
+    if (timer) clearTimeout(timer);
+    timer = null;
+    if (!store || !dirty) return true;
+    dirty = false;
+    try {
+      store.write(snapshot());
+      return true;
+    } catch (e) {
+      dirty = true;
+      schedule(RETRY_DELAY);
+      console.error(
+        `paperless-mcp could not save OAuth state: ${e instanceof Error ? e.message : String(e)}`,
+      );
+      return false;
+    }
+  }
+
+  function persist(now = false): boolean {
+    if (!store) return true;
+    dirty = true;
+    if (now) return flush();
+    schedule(WRITE_DELAY);
+    return true;
+  }
+
+  restore(store ? (store.read() as SavedState | null) : null);
+
   function clientHasRoom(): boolean {
     if (clients.size < limits.maxClients) return true;
     for (const map of [pending, codes, access, refresh]) sweep(map);
@@ -328,7 +465,8 @@ export function createOAuth(
     for (const map of [codes, access, refresh])
       for (const v of map.values()) active.add(v.grant.clientId);
     const cutoff = Date.now() - PENDING_TTL;
-    for (const [id, c] of clients) if (!active.has(id) && c.created <= cutoff) clients.delete(id);
+    for (const [id, c] of clients)
+      if (!active.has(id) && c.created <= cutoff && clients.delete(id)) persist();
     return clients.size < limits.maxClients;
   }
 
@@ -353,8 +491,10 @@ export function createOAuth(
   }
 
   function revoke(match: (grant: Grant) => boolean) {
+    let revoked = false;
     for (const map of [access, refresh])
-      for (const [k, v] of map) if (match(v.grant)) map.delete(k);
+      for (const [k, v] of map) if (match(v.grant) && map.delete(k)) revoked = true;
+    if (revoked) persist(true);
   }
 
   function revokePaperlessToken(token: string) {
@@ -470,6 +610,7 @@ export function createOAuth(
       secretHash: secret ? sha256(secret) : undefined,
       created: now,
     });
+    persist();
     json(res, 201, {
       ...meta,
       client_id: clientId,
@@ -796,6 +937,7 @@ export function createOAuth(
       }
       code.used = true;
       json(res, 200, issue(code.grant));
+      persist();
       return;
     }
     if (grantType === "refresh_token") {
@@ -805,7 +947,24 @@ export function createOAuth(
         invalidGrant("Invalid or expired refresh token");
         return;
       }
-      json(res, 200, issue(entry.grant));
+      const grant = entry.grant;
+      const previousAccess = grant.accessKey;
+      const accessEntry = previousAccess ? access.get(previousAccess) : undefined;
+      const tokens = issue(grant);
+      if (!persist(true)) {
+        access.delete(grant.accessKey!);
+        refresh.delete(grant.refreshKey!);
+        grant.accessKey = previousAccess;
+        grant.refreshKey = key;
+        if (previousAccess && accessEntry) access.set(previousAccess, accessEntry);
+        refresh.set(key, entry);
+        json(res, 503, {
+          error: "temporarily_unavailable",
+          error_description: "Could not save the refreshed token, try again later",
+        });
+        return;
+      }
+      json(res, 200, tokens);
       return;
     }
     json(res, 400, { error: "unsupported_grant_type" });
@@ -847,6 +1006,7 @@ export function createOAuth(
     consentOrigin,
     revokePaperlessToken,
     resourceMetadataUrl,
+    flush,
   };
 }
 

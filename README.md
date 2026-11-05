@@ -5,6 +5,8 @@
 [![license](https://img.shields.io/npm/l/@orellbuehler/paperless-mcp)](LICENSE)
 [![node](https://img.shields.io/node/v/@orellbuehler/paperless-mcp)](package.json)
 
+**Website:** <https://orellbuehler.github.io/paperless-mcp/>
+
 Connect AI agents to [Paperless-ngx](https://docs.paperless-ngx.com/). This [Model Context Protocol](https://modelcontextprotocol.io/) server exposes the Paperless-ngx REST API as 115+ tools, so assistants like Claude can search, upload, tag, and organize your documents — with optional semantic search over your whole archive using local vector embeddings.
 
 Works with any MCP client: Claude Code, Claude Desktop, or your own agent.
@@ -125,16 +127,40 @@ These call endpoints that only exist on Paperless-ngx 3.0 and later. On older se
 
 > On Paperless-ngx 2.x, use `bulk_edit_documents` with `method: "rotate" | "merge" | "split"` instead of the dedicated document-editing tools. Both paths still work on 3.x.
 
+## Prompts and resources
+
+Besides tools, the server exposes MCP prompts (reusable task instructions your client can offer as slash commands) and read-only resources (compact lookups agents can load as context).
+
+| Prompt           | Arguments                          | What it does                                                                                          |
+| ---------------- | ---------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `triage_inbox`   | —                                  | Proposes a correspondent, document type and tags for inbox documents; applies only after you confirm  |
+| `tax_prep`       | `year`                             | Uses `yearly_document_check` to spot missing recurring documents and gathers the year's tax documents |
+| `monthly_review` | `month` (`YYYY-MM`, default: last) | Overview of a month, unclassified documents and action items                                          |
+| `find_document`  | `description`                      | Search strategy combining filters, full-text search and `semantic_search` when enabled                |
+| `cleanup_tags`   | —                                  | Finds unused or near-duplicate tags and proposes merges; never deletes without confirmation           |
+
+| Resource                     | Contents                                                                                  |
+| ---------------------------- | ----------------------------------------------------------------------------------------- |
+| `paperless://tags`           | id, name, color, inbox flag, parent, document count                                       |
+| `paperless://correspondents` | id, name, document count, last correspondence                                             |
+| `paperless://document-types` | id, name, document count                                                                  |
+| `paperless://storage-paths`  | id, name, path template, document count                                                   |
+| `paperless://custom-fields`  | id, name, data type, extra data (e.g. select options), count                              |
+| `paperless://saved-views`    | id, name, filter rules, sort order                                                        |
+| `paperless://documents/{id}` | Template: one document's full metadata plus its OCR content (capped at 20,000 characters) |
+
+Resources are fetched across all pages on every read and run with the requesting user's token, so in HTTP mode each user only sees their own objects.
+
 ## API Versioning
 
-Paperless-ngx negotiates its REST API version through the `Accept` header. This server pins **API v9** by default, which is what every tool above is written against and what both 2.x and 3.x servers accept.
+Paperless-ngx negotiates its REST API version through the `Accept` header. This server pins **API v9** by default, which both 2.x and 3.x servers accept.
 
-This matters because Paperless-ngx 3.0 made v10 the server-side default. Sending no version header at all means a 3.x server answers with v10 shapes, which differ in ways that break clients written for v9:
+Paperless-ngx 3.0 made v10 the server-side default. Every tool works under both versions; the ones affected by v10 adapt as follows:
 
-- `/api/tasks/` becomes paginated, and `task_name`/`type` are renamed to `task_type`/`trigger_source`
-- Saved views drop `show_on_dashboard` and `show_in_sidebar` (they move to UI settings), so `create_saved_view` would silently create views that never appear in the sidebar
+- **Tasks.** v10 paginates `/api/tasks/` and renames `task_name`/`type` to `task_type`/`trigger_source` (status values also become lowercase). `list_tasks` passes the response through in the negotiated shape, takes v10 filter names (`task_type`, `trigger_source`, `status`, `acknowledged`, `task_id`) and translates them to the v9 query params when needed; `page`/`page_size` only apply under v10.
+- **Saved views.** v10 drops `show_on_dashboard`/`show_in_sidebar` from saved views; visibility lives in each user's UI settings (`settings.saved_views.dashboard_views_visible_ids` and `sidebar_views_visible_ids`). `create_saved_view` and `update_saved_view` always send their request as v9, which 3.x still serves: its compatibility layer updates those UI settings server-side in the same request and returns both flags. `get_saved_view`/`list_saved_views` use the configured version, so under v10 they omit the flags; use `get_ui_settings` to see visibility.
 
-Set `PAPERLESS_API_VERSION=10` to opt into v10 once you are ready for those changes, or `PAPERLESS_API_VERSION=none` to send no header and let the server pick. Note that `create_saved_view` and `list_tasks` still assume v9 semantics.
+Set `PAPERLESS_API_VERSION=10` to opt into v10, or `PAPERLESS_API_VERSION=none` to send no header and let the server pick. With `none`, tools that depend on the version use the `X-Api-Version` response header, cached per client (one `GET /api/profile/` probes it if no request has been made yet). Paperless sets that header to the newest version it supports, not the one it served; in every release so far that is also its default (9 on 2.x, 10 on 3.x), so it identifies what a header-less request gets. If the header is missing (e.g. stripped by a proxy), v9 is assumed for that call and nothing is cached.
 
 ## Environment Variables
 
@@ -159,12 +185,13 @@ Set `PAPERLESS_API_VERSION=10` to opt into v10 once you are ready for those chan
 | `MCP_OAUTH_TOKEN_AUTH_METHOD`  | No              | `client_secret_post` or `client_secret_basic` for the IdP token request (default: picked from discovery, like Paperless)                                          |
 | `MCP_OAUTH_ACCESS_TOKEN_TTL`   | No              | Lifetime of issued access tokens in seconds (default: `3600`)                                                                                                     |
 | `MCP_OAUTH_REFRESH_TOKEN_TTL`  | No              | Maximum lifetime of a sign-in in seconds, counted from authorization; refreshing does not extend it (default: `2592000`, 30 days)                                 |
+| `MCP_OAUTH_STATE_KEY`          | No              | Secret (at least 16 characters) that encrypts OAuth state on disk so registrations and sign-ins survive restarts. Unset: in memory only                           |
 | `EMBEDDING_PROVIDER`           | No              | `openai` or `ollama` (default: `openai`)                                                                                                                          |
 | `OPENAI_API_KEY`               | If using OpenAI | Required for OpenAI embeddings                                                                                                                                    |
 | `OLLAMA_URL`                   | If using Ollama | Ollama server URL (default: `http://localhost:11434`)                                                                                                             |
 | `EMBEDDING_MODEL`              | No              | Model name (defaults per provider)                                                                                                                                |
 | `EMBEDDING_DIMENSIONS`         | No              | Vector dimensions (defaults per provider)                                                                                                                         |
-| `PAPERLESS_MCP_DATA`           | No              | Directory for the vector DB (default: `~/.paperless-mcp`)                                                                                                         |
+| `PAPERLESS_MCP_DATA`           | No              | Directory for the vector DB and OAuth state (default: `~/.paperless-mcp`)                                                                                         |
 
 ## Transports
 
@@ -267,8 +294,23 @@ Notes:
   Paperless API tokens still work through `X-Paperless-Token` (e.g. for service
   accounts). This way an expired OAuth token gets a proper `401` challenge
   instead of being passed to Paperless.
-- Client registrations and tokens live in memory. After a restart, clients have
-  to register and authorize again.
+- Without `MCP_OAUTH_STATE_KEY`, client registrations and tokens live in memory
+  (the server says so at startup): after a restart, clients have to register
+  and authorize again. Set it to a long random secret (e.g.
+  `openssl rand -base64 32`) to keep them in
+  `$PAPERLESS_MCP_DATA/oauth-state.json` (default `~/.paperless-mcp`). The file
+  is encrypted with AES-256-GCM using a key derived from the secret with scrypt,
+  and written atomically with mode `0600`. Access and refresh tokens are stored
+  only as SHA-256 hashes; users' Paperless tokens appear only inside the
+  encrypted payload. Sign-ins in progress and authorization codes are not saved.
+  Writes are batched (at most one per second) and flushed on `SIGTERM`/`SIGINT`;
+  revocations and refresh-token rotation are written immediately (if that write
+  fails, a refresh is rolled back and answered with `503`, and a revocation still
+  applies in memory while the save is retried). If the file
+  can't be decrypted (wrong key or corrupt), the server logs a warning, moves it
+  to `oauth-state.json.bak-<timestamp>` and starts empty, so changing the key
+  signs everyone out. To recover from a mistyped key, rename the backup back
+  and restart with the right key.
 - A sign-in lasts at most `MCP_OAUTH_REFRESH_TOKEN_TTL` (30 days by default),
   counted from when the user authorized. Refreshing rotates tokens but doesn't
   extend that limit; after it the user signs in again.
@@ -337,7 +379,7 @@ The image already defaults to `MCP_TRANSPORT=http`, `PORT=3001`, and
 `PAPERLESS_MCP_DATA=/data`, so the only variables you must set are
 `PAPERLESS_URL` and `PAPERLESS_TOKEN` (plus `OPENAI_API_KEY` when semantic
 search is enabled). Mount a volume at `/data` to persist the embedding index
-across restarts.
+(and, with `MCP_OAUTH_STATE_KEY`, OAuth sign-ins) across restarts.
 
 LAN clients connect to `http://<host>:3001/mcp` with their own Paperless API
 token. Run `sync_embeddings` once with the admin token to build the shared
