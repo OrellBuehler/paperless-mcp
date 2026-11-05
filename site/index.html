@@ -1,0 +1,974 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>paperless-mcp</title>
+    <meta
+      name="description"
+      content="Connect AI agents to Paperless-ngx. An MCP server with 120+ tools for searching, uploading, tagging and organizing documents, plus optional semantic search."
+    />
+    <meta property="og:title" content="paperless-mcp" />
+    <meta
+      property="og:description"
+      content="Connect AI agents to Paperless-ngx: 120+ MCP tools, semantic search, multi-user HTTP and OAuth."
+    />
+    <meta property="og:type" content="website" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2317541f'/%3E%3Cpath d='M10 7h9l5 5v13H10z' fill='%23fff'/%3E%3Cpath d='M19 7v5h5' fill='%23a7d7ad'/%3E%3C/svg%3E"
+    />
+    <style>
+      :root {
+        --bg: #fbfcfa;
+        --surface: #ffffff;
+        --surface-2: #f1f4ef;
+        --text: #18201a;
+        --muted: #5a665c;
+        --border: #dde3db;
+        --accent: #17541f;
+        --accent-strong: #0f3d16;
+        --accent-soft: #e3f0e4;
+        --code-bg: #10170f;
+        --code-text: #e6efe5;
+        --radius: 14px;
+        --max: 1120px;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #0c110d;
+          --surface: #131a14;
+          --surface-2: #19221a;
+          --text: #e7ede6;
+          --muted: #9aa79b;
+          --border: #263127;
+          --accent: #6fcf7c;
+          --accent-strong: #8fe09a;
+          --accent-soft: #17301b;
+          --code-bg: #070b07;
+          --code-text: #dbe7da;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html {
+        scroll-behavior: smooth;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font:
+          16px/1.6 system-ui,
+          -apple-system,
+          "Segoe UI",
+          Roboto,
+          sans-serif;
+        -webkit-font-smoothing: antialiased;
+      }
+      a {
+        color: var(--accent);
+      }
+      code,
+      pre {
+        font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+        font-size: 0.9em;
+      }
+      .grid > *,
+      .split > *,
+      .catalog > *,
+      .prompts > * {
+        min-width: 0;
+      }
+      p code,
+      li code,
+      td code {
+        overflow-wrap: anywhere;
+      }
+      .wrap {
+        max-width: var(--max);
+        margin: 0 auto;
+        padding: 0 16px;
+      }
+      header.nav {
+        position: sticky;
+        top: 0;
+        z-index: 10;
+        background: color-mix(in srgb, var(--bg) 85%, transparent);
+        backdrop-filter: blur(10px);
+        border-bottom: 1px solid var(--border);
+      }
+      header.nav .wrap {
+        display: flex;
+        align-items: center;
+        gap: 24px;
+        height: 60px;
+      }
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-weight: 700;
+        color: var(--text);
+        text-decoration: none;
+      }
+      .brand svg {
+        width: 26px;
+        height: 26px;
+      }
+      header.nav nav {
+        display: flex;
+        gap: 20px;
+        margin-left: auto;
+      }
+      header.nav nav a {
+        color: var(--muted);
+        text-decoration: none;
+        font-size: 0.95rem;
+      }
+      header.nav nav a:hover {
+        color: var(--text);
+      }
+      .hero {
+        padding-top: 88px;
+        padding-bottom: 64px;
+      }
+      .eyebrow {
+        display: inline-block;
+        padding: 4px 12px;
+        border-radius: 999px;
+        background: var(--accent-soft);
+        color: var(--accent);
+        font-size: 0.85rem;
+        font-weight: 600;
+      }
+      h1 {
+        font-size: clamp(2.2rem, 5vw, 3.6rem);
+        line-height: 1.1;
+        letter-spacing: -0.02em;
+        margin: 20px 0 16px;
+        max-width: 16ch;
+      }
+      .lead {
+        font-size: 1.2rem;
+        color: var(--muted);
+        max-width: 60ch;
+        margin: 0 0 32px;
+      }
+      .cta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+      }
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 12px 20px;
+        border-radius: 10px;
+        font-weight: 600;
+        text-decoration: none;
+        border: 1px solid var(--border);
+        color: var(--text);
+        background: var(--surface);
+      }
+      .btn.primary {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: var(--bg);
+      }
+      .btn.primary:hover {
+        background: var(--accent-strong);
+      }
+      .install {
+        margin-top: 40px;
+        max-width: 720px;
+        position: relative;
+      }
+      pre {
+        margin: 0;
+        padding: 18px 20px;
+        background: var(--code-bg);
+        color: var(--code-text);
+        border-radius: var(--radius);
+        overflow-x: auto;
+        line-height: 1.5;
+      }
+      .copy {
+        position: absolute;
+        top: 10px;
+        right: 10px;
+        padding: 6px 10px;
+        border-radius: 8px;
+        border: 1px solid #ffffff22;
+        background: #ffffff12;
+        color: var(--code-text);
+        font: inherit;
+        font-size: 0.8rem;
+        cursor: pointer;
+      }
+      .stats {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 1px;
+        background: var(--border);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        overflow: hidden;
+        margin-top: 56px;
+      }
+      .stats div {
+        background: var(--surface);
+        padding: 20px;
+      }
+      .stats strong {
+        display: block;
+        font-size: 1.8rem;
+        line-height: 1.2;
+      }
+      .stats span {
+        color: var(--muted);
+        font-size: 0.9rem;
+      }
+      section {
+        padding: 72px 0;
+        border-top: 1px solid var(--border);
+      }
+      h2 {
+        font-size: clamp(1.6rem, 3vw, 2.2rem);
+        letter-spacing: -0.01em;
+        margin: 0 0 12px;
+      }
+      .section-lead {
+        color: var(--muted);
+        max-width: 62ch;
+        margin: 0 0 40px;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 16px;
+      }
+      .card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 24px;
+      }
+      .card h3 {
+        margin: 12px 0 8px;
+        font-size: 1.1rem;
+      }
+      .card p {
+        margin: 0;
+        color: var(--muted);
+      }
+      .icon {
+        width: 40px;
+        height: 40px;
+        border-radius: 10px;
+        background: var(--accent-soft);
+        color: var(--accent);
+        display: grid;
+        place-items: center;
+      }
+      .icon svg {
+        width: 22px;
+        height: 22px;
+        fill: none;
+        stroke: currentColor;
+        stroke-width: 2;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+      .prompts {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 12px;
+      }
+      .prompt {
+        background: var(--surface-2);
+        border-radius: 12px;
+        padding: 16px 20px;
+        border-left: 3px solid var(--accent);
+      }
+      .prompt small {
+        display: block;
+        color: var(--muted);
+        margin-top: 4px;
+      }
+      .catalog {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 12px;
+      }
+      details {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 14px 18px;
+      }
+      summary {
+        cursor: pointer;
+        font-weight: 600;
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+      }
+      summary::-webkit-details-marker {
+        display: none;
+      }
+      summary .count {
+        color: var(--muted);
+        font-weight: 500;
+        font-variant-numeric: tabular-nums;
+      }
+      details ul {
+        margin: 12px 0 2px;
+        padding: 0;
+        list-style: none;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+      details li code {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 6px;
+        background: var(--surface-2);
+        font-size: 0.8rem;
+      }
+      .tag {
+        font-size: 0.7rem;
+        font-weight: 600;
+        padding: 2px 8px;
+        border-radius: 999px;
+        background: var(--accent-soft);
+        color: var(--accent);
+        margin-left: 8px;
+        vertical-align: middle;
+      }
+      .split {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 16px;
+      }
+      .split .card ul {
+        margin: 12px 0 0;
+        padding-left: 20px;
+        color: var(--muted);
+      }
+      .split .card pre {
+        margin-top: 16px;
+        font-size: 0.85rem;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        overflow: hidden;
+      }
+      th,
+      td {
+        text-align: left;
+        padding: 12px 16px;
+        border-bottom: 1px solid var(--border);
+      }
+      th {
+        background: var(--surface-2);
+        font-size: 0.85rem;
+        color: var(--muted);
+        font-weight: 600;
+      }
+      tr:last-child td {
+        border-bottom: 0;
+      }
+      .yes {
+        color: var(--accent);
+        font-weight: 600;
+      }
+      .table-wrap {
+        overflow-x: auto;
+      }
+      footer {
+        border-top: 1px solid var(--border);
+        padding: 40px 0;
+        color: var(--muted);
+        font-size: 0.9rem;
+      }
+      footer .wrap {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 16px;
+        justify-content: space-between;
+      }
+      footer a {
+        color: var(--muted);
+      }
+      @media (max-width: 900px) {
+        .grid {
+          grid-template-columns: repeat(2, 1fr);
+        }
+        .stats {
+          grid-template-columns: repeat(2, 1fr);
+        }
+      }
+      @media (max-width: 640px) {
+        header.nav nav {
+          display: none;
+        }
+        .hero {
+          padding-top: 56px;
+          padding-bottom: 40px;
+        }
+        .grid,
+        .prompts,
+        .catalog,
+        .split {
+          grid-template-columns: 1fr;
+        }
+        section {
+          padding: 56px 0;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="nav">
+      <div class="wrap">
+        <a class="brand" href="#">
+          <svg viewBox="0 0 32 32" aria-hidden="true">
+            <rect width="32" height="32" rx="7" fill="#17541f" />
+            <path d="M10 7h9l5 5v13H10z" fill="#fff" />
+            <path d="M19 7v5h5" fill="#a7d7ad" />
+          </svg>
+          paperless-mcp
+        </a>
+        <nav>
+          <a href="#features">Features</a>
+          <a href="#tools">Tools</a>
+          <a href="#deploy">Deploy</a>
+          <a href="https://github.com/OrellBuehler/paperless-mcp">GitHub</a>
+        </nav>
+      </div>
+    </header>
+
+    <main>
+      <div class="wrap hero">
+        <span class="eyebrow">Model Context Protocol server for Paperless-ngx</span>
+        <h1>Let your AI assistant run your paperwork.</h1>
+        <p class="lead">
+          paperless-mcp connects Claude and any other MCP client to your Paperless-ngx archive.
+          Search, upload, tag, split and share documents in plain language, with optional semantic
+          search across everything you have ever scanned.
+        </p>
+        <div class="cta">
+          <a class="btn primary" href="#quickstart">Get started</a>
+          <a class="btn" href="https://github.com/OrellBuehler/paperless-mcp">View on GitHub</a>
+          <a class="btn" href="https://www.npmjs.com/package/@orellbuehler/paperless-mcp">npm</a>
+        </div>
+
+        <div class="install" id="quickstart">
+          <pre><code id="cmd">claude mcp add paperless \
+  --env PAPERLESS_URL=https://paperless.example.com \
+  --env PAPERLESS_TOKEN=your-api-token \
+  -- npx -y @orellbuehler/paperless-mcp</code></pre>
+          <button class="copy" type="button" data-copy="cmd">Copy</button>
+        </div>
+
+        <div class="stats">
+          <div><strong>120+</strong><span>tools covering the REST API</span></div>
+          <div><strong>2.x &amp; 3.x</strong><span>Paperless-ngx, API version pinned</span></div>
+          <div><strong>stdio + HTTP</strong><span>single- or multi-user</span></div>
+          <div><strong>MIT</strong><span>open source, self-hosted</span></div>
+        </div>
+      </div>
+
+      <section id="features">
+        <div class="wrap">
+          <h2>Everything Paperless can do, through conversation</h2>
+          <p class="section-lead">
+            Not a thin search wrapper. paperless-mcp covers documents, metadata, permissions, mail,
+            workflows and system administration, and adds tools built for agents on top.
+          </p>
+          <div class="grid">
+            <div class="card">
+              <div class="icon">
+                <svg viewBox="0 0 24 24">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                  <path d="M14 2v6h6M9 13h6M9 17h6" />
+                </svg>
+              </div>
+              <h3>Full document management</h3>
+              <p>
+                Search, upload, download, update and bulk-edit documents. Manage tags,
+                correspondents, document types, storage paths, custom fields and saved views.
+              </p>
+            </div>
+            <div class="card">
+              <div class="icon">
+                <svg viewBox="0 0 24 24">
+                  <circle cx="11" cy="11" r="7" />
+                  <path d="m21 21-4.3-4.3M8 11h6M11 8v6" />
+                </svg>
+              </div>
+              <h3>Semantic search</h3>
+              <p>
+                Find documents by meaning, not keywords. Embeddings from OpenAI or Ollama, stored
+                locally in sqlite-vec. No external vector database.
+              </p>
+            </div>
+            <div class="card">
+              <div class="icon">
+                <svg viewBox="0 0 24 24">
+                  <path
+                    d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"
+                  />
+                  <circle cx="12" cy="12" r="3" />
+                </svg>
+              </div>
+              <h3>AI-assisted workflows</h3>
+              <p>
+                Auto-classify documents, triage the inbox, bulk-tag by content, and spot missing
+                recurring documents year over year, for example when preparing taxes.
+              </p>
+            </div>
+            <div class="card">
+              <div class="icon">
+                <svg viewBox="0 0 24 24">
+                  <path d="M6 2h9l5 5v15H6z" />
+                  <path d="M9 12h6M9 16h4" />
+                  <path d="M2 8h4M2 12h4" />
+                </svg>
+              </div>
+              <h3>PDF page tools</h3>
+              <p>
+                Pull out just the page that matters as a new PDF, or find which pages mention a
+                phrase. Processed locally, without touching the original.
+              </p>
+            </div>
+            <div class="card">
+              <div class="icon">
+                <svg viewBox="0 0 24 24">
+                  <circle cx="9" cy="8" r="3" />
+                  <path d="M3 20a6 6 0 0 1 12 0" />
+                  <circle cx="17" cy="9" r="2.5" />
+                  <path d="M15.5 14.2A5 5 0 0 1 21 19" />
+                </svg>
+              </div>
+              <h3>Multi-user and OAuth</h3>
+              <p>
+                Run one HTTP server for the whole household or team. Every request runs as the
+                signed-in user, with their own Paperless permissions. Optional OIDC sign-in.
+              </p>
+            </div>
+            <div class="card">
+              <div class="icon">
+                <svg viewBox="0 0 24 24">
+                  <path d="M4 4h16v16H4z" />
+                  <path d="m4 8 8 5 8-5" />
+                </svg>
+              </div>
+              <h3>Mail, sharing and trash</h3>
+              <p>
+                Configure mail accounts and rules, create public share links and bundles, email
+                documents, and restore from the trash.
+              </p>
+            </div>
+            <div class="card">
+              <div class="icon">
+                <svg viewBox="0 0 24 24">
+                  <path d="M3 7h18M3 12h18M3 17h18" />
+                  <circle cx="8" cy="7" r="1.5" />
+                  <circle cx="16" cy="12" r="1.5" />
+                  <circle cx="10" cy="17" r="1.5" />
+                </svg>
+              </div>
+              <h3>Paperless-ngx 3.0 ready</h3>
+              <p>
+                Document versions, PDF editing, share bundles and task management. The REST API
+                version is pinned so 2.x and 3.x servers behave the same.
+              </p>
+            </div>
+            <div class="card">
+              <div class="icon">
+                <svg viewBox="0 0 24 24">
+                  <path d="M12 2 4 6v6c0 5 3.4 8.6 8 10 4.6-1.4 8-5 8-10V6z" />
+                  <path d="m9 12 2 2 4-4" />
+                </svg>
+              </div>
+              <h3>Safe by design</h3>
+              <p>
+                Read, create and update for configuration objects; no silent deletes of views, users
+                or workflows. Origin and host allowlists for the HTTP transport.
+              </p>
+            </div>
+            <div class="card">
+              <div class="icon">
+                <svg viewBox="0 0 24 24"><path d="M3 12h4l3-8 4 16 3-8h4" /></svg>
+              </div>
+              <h3>Docker sidecar</h3>
+              <p>
+                Prebuilt image on GHCR. Drop it next to Paperless in your compose stack and point
+                your clients at <code>/mcp</code>.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <div class="wrap">
+          <h2>Ask, don't click</h2>
+          <p class="section-lead">Things you can say once it's connected.</p>
+          <div class="prompts">
+            <div class="prompt">
+              “Find all invoices from my ISP in 2025 and tag them as telecom.”
+            </div>
+            <div class="prompt">
+              “Upload this PDF, set the correspondent to my landlord, and file it as a contract.”
+            </div>
+            <div class="prompt">
+              “Which documents in my inbox are missing a correspondent or document type?”
+            </div>
+            <div class="prompt">
+              “Give me just the page of my insurance policy that mentions the deductible.”
+            </div>
+            <div class="prompt">
+              “Which bank statements from last year are missing compared to this year?”
+            </div>
+            <div class="prompt">
+              “Find the document about the espresso machine warranty.”
+              <small>Semantic search: no keyword match needed.</small>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="tools">
+        <div class="wrap">
+          <h2>Tool catalog</h2>
+          <p class="section-lead">
+            Grouped by area. Expand a group to see its tools; the
+            <a href="https://github.com/OrellBuehler/paperless-mcp#available-tools">README</a> has
+            the details.
+          </p>
+          <div class="catalog">
+            <details>
+              <summary>Documents and search <span class="count">17</span></summary>
+              <ul>
+                <li><code>search_documents</code></li>
+                <li><code>search_autocomplete</code></li>
+                <li><code>list_documents</code></li>
+                <li><code>get_document</code></li>
+                <li><code>get_documents</code></li>
+                <li><code>download_document</code></li>
+                <li><code>update_document</code></li>
+                <li><code>delete_document</code></li>
+                <li><code>upload_document</code></li>
+                <li><code>get_document_metadata</code></li>
+                <li><code>get_document_suggestions</code></li>
+                <li><code>get_document_notes</code></li>
+                <li><code>add_document_note</code></li>
+                <li><code>delete_document_note</code></li>
+                <li><code>get_document_history</code></li>
+                <li><code>get_document_content</code></li>
+                <li><code>upload_from_url</code></li>
+              </ul>
+            </details>
+            <details>
+              <summary>Bulk operations <span class="count">6</span></summary>
+              <ul>
+                <li><code>bulk_edit_documents</code></li>
+                <li><code>bulk_set_object_permissions</code></li>
+                <li><code>bulk_download_documents</code></li>
+                <li><code>get_next_asn</code></li>
+                <li><code>get_selection_data</code></li>
+                <li><code>test_storage_path</code></li>
+              </ul>
+            </details>
+            <details>
+              <summary>Organization <span class="count">28</span></summary>
+              <ul>
+                <li><code>list_tags</code></li>
+                <li><code>get_tag</code></li>
+                <li><code>create_tag</code></li>
+                <li><code>update_tag</code></li>
+                <li><code>delete_tag</code></li>
+                <li><code>list_correspondents</code></li>
+                <li><code>get_correspondent</code></li>
+                <li><code>create_correspondent</code></li>
+                <li><code>update_correspondent</code></li>
+                <li><code>delete_correspondent</code></li>
+                <li><code>list_document_types</code></li>
+                <li><code>get_document_type</code></li>
+                <li><code>create_document_type</code></li>
+                <li><code>update_document_type</code></li>
+                <li><code>delete_document_type</code></li>
+                <li><code>list_storage_paths</code></li>
+                <li><code>get_storage_path</code></li>
+                <li><code>create_storage_path</code></li>
+                <li><code>update_storage_path</code></li>
+                <li><code>delete_storage_path</code></li>
+                <li><code>list_custom_fields</code></li>
+                <li><code>get_custom_field</code></li>
+                <li><code>create_custom_field</code></li>
+                <li><code>update_custom_field</code></li>
+                <li><code>list_saved_views</code></li>
+                <li><code>get_saved_view</code></li>
+                <li><code>create_saved_view</code></li>
+                <li><code>update_saved_view</code></li>
+              </ul>
+            </details>
+            <details>
+              <summary>AI workflows and helpers <span class="count">9</span></summary>
+              <ul>
+                <li><code>auto_classify_document</code></li>
+                <li><code>process_inbox</code></li>
+                <li><code>bulk_tag_by_content</code></li>
+                <li><code>get_documents_by_correspondent</code></li>
+                <li><code>monthly_summary</code></li>
+                <li><code>yearly_document_check</code></li>
+                <li><code>extract_document_pages</code></li>
+                <li><code>find_document_pages</code></li>
+                <li><code>get_document_ai_suggestions</code><span class="tag">3.0+</span></li>
+              </ul>
+            </details>
+            <details>
+              <summary>Semantic search <span class="count">3</span></summary>
+              <ul>
+                <li><code>semantic_search</code></li>
+                <li><code>sync_embeddings</code></li>
+                <li><code>embedding_status</code></li>
+              </ul>
+            </details>
+            <details>
+              <summary>Versions and PDF editing <span class="count">9</span></summary>
+              <ul>
+                <li><code>upload_document_version</code><span class="tag">3.0+</span></li>
+                <li><code>set_document_version_label</code><span class="tag">3.0+</span></li>
+                <li><code>delete_document_version</code><span class="tag">3.0+</span></li>
+                <li><code>get_document_root</code><span class="tag">3.0+</span></li>
+                <li><code>rotate_documents</code><span class="tag">3.0+</span></li>
+                <li><code>merge_documents</code><span class="tag">3.0+</span></li>
+                <li><code>edit_pdf_document</code><span class="tag">3.0+</span></li>
+                <li><code>remove_document_password</code><span class="tag">3.0+</span></li>
+                <li><code>reprocess_documents</code><span class="tag">3.0+</span></li>
+              </ul>
+            </details>
+            <details>
+              <summary>Users, groups and workflows <span class="count">12</span></summary>
+              <ul>
+                <li><code>list_users</code></li>
+                <li><code>get_user</code></li>
+                <li><code>create_user</code></li>
+                <li><code>update_user</code></li>
+                <li><code>list_groups</code></li>
+                <li><code>get_group</code></li>
+                <li><code>create_group</code></li>
+                <li><code>update_group</code></li>
+                <li><code>list_workflows</code></li>
+                <li><code>get_workflow</code></li>
+                <li><code>create_workflow</code></li>
+                <li><code>update_workflow</code></li>
+              </ul>
+            </details>
+            <details>
+              <summary>Mail <span class="count">11</span></summary>
+              <ul>
+                <li><code>list_mail_accounts</code></li>
+                <li><code>get_mail_account</code></li>
+                <li><code>create_mail_account</code></li>
+                <li><code>update_mail_account</code></li>
+                <li><code>test_mail_account</code></li>
+                <li><code>process_mail_account</code></li>
+                <li><code>list_mail_rules</code></li>
+                <li><code>get_mail_rule</code></li>
+                <li><code>create_mail_rule</code></li>
+                <li><code>update_mail_rule</code></li>
+                <li><code>list_processed_mail</code></li>
+              </ul>
+            </details>
+            <details>
+              <summary>Sharing and email <span class="count">10</span></summary>
+              <ul>
+                <li><code>list_share_links</code></li>
+                <li><code>get_share_link</code></li>
+                <li><code>create_share_link</code></li>
+                <li><code>get_document_share_links</code></li>
+                <li><code>list_share_link_bundles</code><span class="tag">3.0+</span></li>
+                <li><code>get_share_link_bundle</code><span class="tag">3.0+</span></li>
+                <li><code>create_share_link_bundle</code><span class="tag">3.0+</span></li>
+                <li><code>rebuild_share_link_bundle</code><span class="tag">3.0+</span></li>
+                <li><code>email_document</code></li>
+                <li><code>email_documents</code></li>
+              </ul>
+            </details>
+            <details>
+              <summary>System, tasks and trash <span class="count">18</span></summary>
+              <ul>
+                <li><code>get_status</code></li>
+                <li><code>get_statistics</code></li>
+                <li><code>list_tasks</code></li>
+                <li><code>acknowledge_tasks</code></li>
+                <li><code>run_task</code><span class="tag">3.0+</span></li>
+                <li><code>get_task_summary</code><span class="tag">3.0+</span></li>
+                <li><code>get_task_status_counts</code><span class="tag">3.0+</span></li>
+                <li><code>get_active_tasks</code><span class="tag">3.0+</span></li>
+                <li><code>get_config</code></li>
+                <li><code>update_config</code></li>
+                <li><code>get_ui_settings</code></li>
+                <li><code>get_profile</code></li>
+                <li><code>get_remote_version</code></li>
+                <li><code>list_logs</code></li>
+                <li><code>get_log</code></li>
+                <li><code>list_trash</code></li>
+                <li><code>restore_from_trash</code></li>
+                <li><code>empty_trash</code></li>
+              </ul>
+            </details>
+          </div>
+        </div>
+      </section>
+
+      <section id="deploy">
+        <div class="wrap">
+          <h2>Run it your way</h2>
+          <p class="section-lead">
+            Start with one command on your laptop, or run a shared server next to Paperless.
+          </p>
+          <div class="split">
+            <div class="card">
+              <div class="icon">
+                <svg viewBox="0 0 24 24"><path d="M4 17l6-5-6-5M12 19h8" /></svg>
+              </div>
+              <h3>stdio, single user</h3>
+              <p>Your MCP client launches the server via <code>npx</code>. Nothing to host.</p>
+              <ul>
+                <li>Claude Code, Claude Desktop, any MCP client</li>
+                <li>Uses your Paperless API token</li>
+                <li>Semantic index stored in <code>~/.paperless-mcp</code></li>
+              </ul>
+              <pre><code>{
+  "mcpServers": {
+    "paperless": {
+      "command": "npx",
+      "args": ["-y", "@orellbuehler/paperless-mcp"],
+      "env": {
+        "PAPERLESS_URL": "https://paperless.example.com",
+        "PAPERLESS_TOKEN": "your-api-token"
+      }
+    }
+  }
+}</code></pre>
+            </div>
+            <div class="card">
+              <div class="icon">
+                <svg viewBox="0 0 24 24">
+                  <rect x="3" y="4" width="18" height="7" rx="1.5" />
+                  <rect x="3" y="13" width="18" height="7" rx="1.5" />
+                  <path d="M7 7.5h.01M7 16.5h.01" />
+                </svg>
+              </div>
+              <h3>HTTP sidecar, multi-user</h3>
+              <p>One server for everyone. Each request runs with the caller's own token.</p>
+              <ul>
+                <li>Prebuilt Docker image on GHCR</li>
+                <li>Optional OAuth sign-in via your Paperless OIDC provider</li>
+                <li>Shared semantic index, filtered per user</li>
+              </ul>
+              <pre><code>paperless-mcp:
+  image: ghcr.io/orellbuehler/paperless-mcp:latest
+  ports: ["3001:3001"]
+  volumes: ["./mcp:/data"]
+  environment:
+    PAPERLESS_URL: http://webserver:8000
+    PAPERLESS_TOKEN: &lt;admin-token&gt;</code></pre>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <div class="wrap">
+          <h2>Compatibility</h2>
+          <p class="section-lead">
+            The client pins REST API v9 by default, so behavior doesn't change when you upgrade
+            Paperless. Opt into v10 with <code>PAPERLESS_API_VERSION=10</code>.
+          </p>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Capability</th>
+                  <th>Paperless-ngx 2.x</th>
+                  <th>Paperless-ngx 3.x</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Documents, organization, mail, sharing, users, workflows</td>
+                  <td class="yes">Yes</td>
+                  <td class="yes">Yes</td>
+                </tr>
+                <tr>
+                  <td>Semantic search, PDF page tools, AI workflows</td>
+                  <td class="yes">Yes</td>
+                  <td class="yes">Yes</td>
+                </tr>
+                <tr>
+                  <td>Rotate, merge, split</td>
+                  <td>Via <code>bulk_edit_documents</code></td>
+                  <td class="yes">Yes</td>
+                </tr>
+                <tr>
+                  <td>Document versions, PDF editing, AI suggestions</td>
+                  <td>No</td>
+                  <td class="yes">Yes</td>
+                </tr>
+                <tr>
+                  <td>Share link bundles, task management</td>
+                  <td>No</td>
+                  <td class="yes">Yes</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <div class="wrap">
+        <span>MIT licensed. Not affiliated with the Paperless-ngx project.</span>
+        <span>
+          <a href="https://github.com/OrellBuehler/paperless-mcp">GitHub</a> ·
+          <a href="https://www.npmjs.com/package/@orellbuehler/paperless-mcp">npm</a> ·
+          <a href="https://github.com/OrellBuehler/paperless-mcp/pkgs/container/paperless-mcp"
+            >Docker</a
+          >
+          ·
+          <a href="https://github.com/OrellBuehler/paperless-mcp/issues">Issues</a>
+        </span>
+      </div>
+    </footer>
+
+    <script>
+      document.querySelectorAll("[data-copy]").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          const text = document.getElementById(btn.dataset.copy).textContent;
+          try {
+            await navigator.clipboard.writeText(text);
+            btn.textContent = "Copied";
+          } catch {
+            btn.textContent = "Select and copy";
+          }
+          setTimeout(() => (btn.textContent = "Copy"), 1500);
+        });
+      });
+    </script>
+  </body>
+</html>
