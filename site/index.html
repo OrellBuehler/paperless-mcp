@@ -562,7 +562,8 @@
               <h3>Multi-user and OAuth</h3>
               <p>
                 Run one HTTP server for the whole household or team. Every request runs as the
-                signed-in user, with their own Paperless permissions. Optional OIDC sign-in.
+                signed-in user, with their own Paperless permissions. Optional OIDC sign-in, with
+                sessions that survive restarts in an encrypted state file.
               </p>
             </div>
             <div class="card">
@@ -589,8 +590,8 @@
               </div>
               <h3>Paperless-ngx 3.0 ready</h3>
               <p>
-                Document versions, PDF editing, share bundles and task management. The REST API
-                version is pinned so 2.x and 3.x servers behave the same.
+                Document versions, PDF editing, share bundles and task management. API v9 is pinned
+                by default so 2.x and 3.x behave the same; v10 is fully supported when you opt in.
               </p>
             </div>
             <div class="card">
@@ -602,8 +603,9 @@
               </div>
               <h3>Safe by design</h3>
               <p>
-                Read, create and update for configuration objects; no silent deletes of views, users
-                or workflows. Origin and host allowlists for the HTTP transport.
+                Every tool is annotated as read-only, destructive or external, so clients can
+                auto-approve reads and confirm deletes. Run read-only, or load only the toolsets you
+                need.
               </p>
             </div>
             <div class="card">
@@ -614,6 +616,46 @@
               <p>
                 Prebuilt image on GHCR. Drop it next to Paperless in your compose stack and point
                 your clients at <code>/mcp</code>.
+              </p>
+            </div>
+            <div class="card">
+              <div class="icon">
+                <svg viewBox="0 0 24 24">
+                  <rect x="3" y="4" width="18" height="16" rx="2" />
+                  <circle cx="9" cy="10" r="2" />
+                  <path d="m21 16-5-5-9 9" />
+                </svg>
+              </div>
+              <h3>Vision-ready</h3>
+              <p>
+                Thumbnails and image documents come back as images, so vision models can look at a
+                receipt or a scan instead of guessing from OCR text.
+              </p>
+            </div>
+            <div class="card">
+              <div class="icon">
+                <svg viewBox="0 0 24 24">
+                  <path d="M4 5h16v11H8l-4 4z" />
+                  <path d="M8 9h8M8 12h5" />
+                </svg>
+              </div>
+              <h3>Prompts and resources</h3>
+              <p>
+                Ready-made prompts for inbox triage, tax prep and tag cleanup, plus resources that
+                load your tags, correspondents and document types as context.
+              </p>
+            </div>
+            <div class="card">
+              <div class="icon">
+                <svg viewBox="0 0 24 24">
+                  <path d="M21 12a9 9 0 1 1-3-6.7L21 8" />
+                  <path d="M21 3v5h-5" />
+                </svg>
+              </div>
+              <h3>Resilient connection</h3>
+              <p>
+                Request timeouts and automatic retries for safe reads, honouring
+                <code>Retry-After</code>, so a slow or restarting Paperless doesn't hang your agent.
               </p>
             </div>
           </div>
@@ -652,13 +694,13 @@
         <div class="wrap">
           <h2>Tool catalog</h2>
           <p class="section-lead">
-            Grouped by area. Expand a group to see its tools; the
+            Grouped by area, plus MCP prompts and resources. Expand a group to see its entries; the
             <a href="https://github.com/OrellBuehler/paperless-mcp#available-tools">README</a> has
             the details.
           </p>
           <div class="catalog">
             <details>
-              <summary>Documents and search <span class="count">17</span></summary>
+              <summary>Documents and search <span class="count">18</span></summary>
               <ul>
                 <li><code>search_documents</code></li>
                 <li><code>search_autocomplete</code></li>
@@ -675,6 +717,7 @@
                 <li><code>add_document_note</code></li>
                 <li><code>delete_document_note</code></li>
                 <li><code>get_document_history</code></li>
+                <li><code>get_document_thumbnail</code></li>
                 <li><code>get_document_content</code></li>
                 <li><code>upload_from_url</code></li>
               </ul>
@@ -830,6 +873,28 @@
                 <li><code>empty_trash</code></li>
               </ul>
             </details>
+            <details>
+              <summary>Prompts <span class="count">5</span></summary>
+              <ul>
+                <li><code>triage_inbox</code></li>
+                <li><code>tax_prep</code></li>
+                <li><code>monthly_review</code></li>
+                <li><code>find_document</code></li>
+                <li><code>cleanup_tags</code></li>
+              </ul>
+            </details>
+            <details>
+              <summary>Resources <span class="count">7</span></summary>
+              <ul>
+                <li><code>paperless://tags</code></li>
+                <li><code>paperless://correspondents</code></li>
+                <li><code>paperless://document-types</code></li>
+                <li><code>paperless://storage-paths</code></li>
+                <li><code>paperless://custom-fields</code></li>
+                <li><code>paperless://saved-views</code></li>
+                <li><code>paperless://documents/{id}</code></li>
+              </ul>
+            </details>
           </div>
         </div>
       </section>
@@ -851,6 +916,7 @@
                 <li>Claude Code, Claude Desktop, any MCP client</li>
                 <li>Uses your Paperless API token</li>
                 <li>Semantic index stored in <code>~/.paperless-mcp</code></li>
+                <li><code>PAPERLESS_READ_ONLY=true</code> for a look-but-don't-touch assistant</li>
               </ul>
               <pre><code>{
   "mcpServers": {
@@ -897,7 +963,8 @@
           <h2>Compatibility</h2>
           <p class="section-lead">
             The client pins REST API v9 by default, so behavior doesn't change when you upgrade
-            Paperless. Opt into v10 with <code>PAPERLESS_API_VERSION=10</code>.
+            Paperless. Opt into v10 with <code>PAPERLESS_API_VERSION=10</code>, or set it to
+            <code>none</code> to follow the server.
           </p>
           <div class="table-wrap">
             <table>
