@@ -1086,6 +1086,93 @@ describe("OAuth mode", () => {
       expect((await rawRegister()).status).toBe(503);
     });
 
+    it("rolls back a refresh and answers 503 when saving fails", async () => {
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      const s = store();
+      await restart({}, {}, s);
+      const { client_id, tokens } = await login();
+      oauth.flush();
+      const write = vi.spyOn(s, "write").mockImplementation(() => {
+        throw new Error("disk full");
+      });
+      const failed = await refreshWith(client_id, tokens.refresh_token);
+      expect(failed.status).toBe(503);
+      expect((await failed.json()).error).toBe("temporarily_unavailable");
+      expect(oauth.resolve(bearer(tokens.access_token))?.token).toBe("user-tok");
+      write.mockRestore();
+      const r = await refreshWith(client_id, tokens.refresh_token);
+      expect(r.status).toBe(200);
+      const next = await r.json();
+      await restart({}, {}, store());
+      expect(oauth.resolve(bearer(next.access_token))?.token).toBe("user-tok");
+      expect((await refreshWith(client_id, tokens.refresh_token)).status).toBe(400);
+    });
+
+    it("revokes in memory and retries saving when a revocation write fails", async () => {
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      const s = store();
+      await restart({}, {}, s);
+      const { client_id, tokens } = await login();
+      oauth.flush();
+      const write = vi.spyOn(s, "write").mockImplementation(() => {
+        throw new Error("read-only file system");
+      });
+      oauth.revokePaperlessToken("user-tok");
+      expect(write).toHaveBeenCalledOnce();
+      expect(oauth.resolve(bearer(tokens.access_token))).toBeNull();
+      write.mockRestore();
+      expect(oauth.flush()).toBe(true);
+      await restart({}, {}, store());
+      expect(oauth.resolve(bearer(tokens.access_token))).toBeNull();
+      expect((await refreshWith(client_id, tokens.refresh_token)).status).toBe(400);
+    });
+
+    it("drops malformed entries on load", async () => {
+      const now = Date.now();
+      const client = { name: "ok", redirectUris: [redirectUri], created: now };
+      const grant = {
+        id: "g",
+        clientId: "good",
+        paperlessToken: "user-tok",
+        expires: now + 86400_000,
+        accessKey: challengeFor("tok-a"),
+        accessExpires: now + 3600_000,
+        refreshKey: challengeFor("tok-r"),
+      };
+      for (const state of [null, "x", { clients: "x", grants: "y" }, { clients: [], grants: {} }]) {
+        store().write(state);
+        await restart({}, {}, store());
+        expect(oauth.resolve(bearer("tok-a"))).toBeNull();
+      }
+      store().write({
+        clients: {
+          c: null,
+          d: { name: 1, redirectUris: [], created: now },
+          e: { ...client, redirectUris: "x" },
+          good: client,
+        },
+        grants: [
+          null,
+          5,
+          { id: "x" },
+          { ...grant, clientId: "c" },
+          { ...grant, expires: "x" },
+          grant,
+        ],
+      });
+      await restart({}, {}, store());
+      expect(oauth.resolve(bearer("tok-a"))?.token).toBe("user-tok");
+      expect((await authorize("good")).status).toBe(200);
+      for (const id of ["c", "d", "e"]) expect((await authorize(id)).status).toBe(400);
+      expect((await refreshWith("good", "tok-r")).status).toBe(200);
+    });
+
+    it("tightens an existing data directory to 0700", () => {
+      mkdirSync(dir, { mode: 0o755 });
+      store().write({});
+      expect(statSync(dir).mode & 0o777).toBe(0o700);
+    });
+
     it("keeps state in memory without MCP_OAUTH_STATE_KEY", async () => {
       const warn = vi.spyOn(console, "error").mockImplementation(() => {});
       expect(stateStoreFromEnv({ PAPERLESS_MCP_DATA: dir })).toBeNull();

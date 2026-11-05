@@ -1,5 +1,6 @@
 import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from "node:crypto";
 import {
+  chmodSync,
   closeSync,
   fsyncSync,
   mkdirSync,
@@ -7,6 +8,7 @@ import {
   readFileSync,
   renameSync,
   rmSync,
+  statSync,
   writeSync,
 } from "node:fs";
 import { homedir } from "node:os";
@@ -32,6 +34,35 @@ export function createStateStore(dir: string, secret: string): StateStore {
     throw new Error(`MCP_OAUTH_STATE_KEY must be at least ${MIN_SECRET_LENGTH} characters`);
   const key = deriveStateKey(secret);
   const path = join(dir, "oauth-state.json");
+  let secured = false;
+
+  function secureDir() {
+    if (secured) return;
+    secured = true;
+    try {
+      if (statSync(dir).mode & 0o077) chmodSync(dir, 0o700);
+    } catch (e) {
+      console.error(
+        `Warning: could not restrict ${dir} to mode 0700: ${e instanceof Error ? e.message : String(e)}`,
+      );
+    }
+  }
+
+  function syncDir() {
+    let fd: number;
+    try {
+      fd = openSync(dir, "r");
+    } catch {
+      return;
+    }
+    try {
+      fsyncSync(fd);
+    } catch {
+      return;
+    } finally {
+      closeSync(fd);
+    }
+  }
 
   function decrypt(raw: string): unknown {
     const file = JSON.parse(raw);
@@ -70,6 +101,7 @@ export function createStateStore(dir: string, secret: string): StateStore {
 
   function write(state: unknown) {
     mkdirSync(dir, { recursive: true, mode: 0o700 });
+    secureDir();
     const iv = randomBytes(12);
     const cipher = createCipheriv("aes-256-gcm", key, iv, { authTagLength: 16 });
     cipher.setAAD(AAD);
@@ -92,6 +124,7 @@ export function createStateStore(dir: string, secret: string): StateStore {
       closeSync(fd);
     }
     renameSync(tmp, path);
+    syncDir();
   }
 
   return { path, read, write };

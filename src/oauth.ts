@@ -106,6 +106,7 @@ const MAX_URI_LENGTH = 2000;
 const MAX_NAME_LENGTH = 200;
 const MAX_PARAM_LENGTH = 1000;
 const WRITE_DELAY = 1000;
+const RETRY_DELAY = 10_000;
 const COOKIE_PREFIX = "paperless_mcp_oauth_";
 const LOCAL_HOSTS = ["localhost", "127.0.0.1", "[::1]"];
 
@@ -197,6 +198,43 @@ function bearerToken(headers: Headers): string | null {
   if (typeof auth !== "string") return null;
   const m = /^bearer(?:\s+(.*))?$/i.exec(auth.trim());
   return m ? (m[1] || "").trim() : null;
+}
+
+function isString(value: unknown): value is string {
+  return typeof value === "string";
+}
+
+function optional(value: unknown, check: (v: unknown) => boolean): boolean {
+  return value === undefined || value === null || check(value);
+}
+
+function validClient(value: unknown): value is Client {
+  const c = value as Client | null;
+  return (
+    !!c &&
+    typeof c === "object" &&
+    isString(c.name) &&
+    Array.isArray(c.redirectUris) &&
+    c.redirectUris.every(isString) &&
+    Number.isFinite(c.created) &&
+    optional(c.secretHash, isString)
+  );
+}
+
+function validGrant(value: unknown): value is SavedGrant {
+  const g = value as SavedGrant | null;
+  return (
+    !!g &&
+    typeof g === "object" &&
+    isString(g.id) &&
+    isString(g.clientId) &&
+    isString(g.paperlessToken) &&
+    isString(g.refreshKey) &&
+    Number.isFinite(g.expires) &&
+    optional(g.scope, isString) &&
+    optional(g.accessKey, isString) &&
+    optional(g.accessExpires, Number.isFinite)
+  );
 }
 
 function sweep(map: Map<string, { expires: number }>) {
@@ -346,49 +384,75 @@ export function createOAuth(
   }
 
   function restore(state: SavedState | null) {
-    if (!state) return;
+    if (!state || typeof state !== "object") return;
     const now = Date.now();
     const grants = (Array.isArray(state.grants) ? state.grants : [])
-      .filter((g) => g && g.expires > now && g.refreshKey)
+      .filter((g) => validGrant(g) && g.expires > now)
       .sort((a, b) => b.expires - a.expires)
       .slice(0, limits.maxTokens);
-    const saved = state.clients || {};
+    const saved =
+      state.clients && typeof state.clients === "object" && !Array.isArray(state.clients)
+        ? state.clients
+        : {};
     for (const id of [...grants.map((g) => g.clientId), ...Object.keys(saved)]) {
       if (clients.size >= limits.maxClients) break;
-      if (Object.hasOwn(saved, id) && !clients.has(id)) clients.set(id, saved[id]);
+      const c = Object.hasOwn(saved, id) ? saved[id] : undefined;
+      if (!clients.has(id) && validClient(c))
+        clients.set(id, {
+          name: c.name,
+          redirectUris: c.redirectUris,
+          secretHash: c.secretHash ?? undefined,
+          created: c.created,
+        });
     }
-    for (const { accessExpires, ...grant } of grants) {
-      if (!clients.has(grant.clientId)) continue;
-      refresh.set(grant.refreshKey!, { grant, expires: grant.expires });
-      if (grant.accessKey && accessExpires && accessExpires > now)
-        access.set(grant.accessKey, { grant, expires: accessExpires });
-      else grant.accessKey = undefined;
+    for (const g of grants) {
+      if (!clients.has(g.clientId)) continue;
+      const grant: Grant = {
+        id: g.id,
+        clientId: g.clientId,
+        paperlessToken: g.paperlessToken,
+        scope: g.scope ?? undefined,
+        expires: g.expires,
+        refreshKey: g.refreshKey,
+      };
+      refresh.set(g.refreshKey!, { grant, expires: g.expires });
+      if (g.accessKey && g.accessExpires && g.accessExpires > now) {
+        grant.accessKey = g.accessKey;
+        access.set(g.accessKey, { grant, expires: g.accessExpires });
+      }
     }
   }
 
-  function flush() {
+  function schedule(delay: number) {
+    if (timer) return;
+    timer = setTimeout(flush, delay);
+    timer.unref();
+  }
+
+  function flush(): boolean {
     if (timer) clearTimeout(timer);
     timer = null;
-    if (!store || !dirty) return;
+    if (!store || !dirty) return true;
     dirty = false;
     try {
       store.write(snapshot());
+      return true;
     } catch (e) {
       dirty = true;
+      schedule(RETRY_DELAY);
       console.error(
         `paperless-mcp could not save OAuth state: ${e instanceof Error ? e.message : String(e)}`,
       );
+      return false;
     }
   }
 
-  function persist(now = false) {
-    if (!store) return;
+  function persist(now = false): boolean {
+    if (!store) return true;
     dirty = true;
-    if (now) flush();
-    else if (!timer) {
-      timer = setTimeout(flush, WRITE_DELAY);
-      timer.unref();
-    }
+    if (now) return flush();
+    schedule(WRITE_DELAY);
+    return true;
   }
 
   restore(store ? (store.read() as SavedState | null) : null);
@@ -883,8 +947,23 @@ export function createOAuth(
         invalidGrant("Invalid or expired refresh token");
         return;
       }
-      const tokens = issue(entry.grant);
-      persist(true);
+      const grant = entry.grant;
+      const previousAccess = grant.accessKey;
+      const accessEntry = previousAccess ? access.get(previousAccess) : undefined;
+      const tokens = issue(grant);
+      if (!persist(true)) {
+        access.delete(grant.accessKey!);
+        refresh.delete(grant.refreshKey!);
+        grant.accessKey = previousAccess;
+        grant.refreshKey = key;
+        if (previousAccess && accessEntry) access.set(previousAccess, accessEntry);
+        refresh.set(key, entry);
+        json(res, 503, {
+          error: "temporarily_unavailable",
+          error_description: "Could not save the refreshed token, try again later",
+        });
+        return;
+      }
       json(res, 200, tokens);
       return;
     }

@@ -276,7 +276,9 @@ Notes:
   only as SHA-256 hashes; users' Paperless tokens appear only inside the
   encrypted payload. Sign-ins in progress and authorization codes are not saved.
   Writes are batched (at most one per second) and flushed on `SIGTERM`/`SIGINT`;
-  revocations and refresh-token rotation are written immediately. If the file
+  revocations and refresh-token rotation are written immediately (if that write
+  fails, a refresh is rolled back and answered with `503`, and a revocation still
+  applies in memory while the save is retried). If the file
   can't be decrypted (wrong key or corrupt), the server logs a warning, moves it
   to `oauth-state.json.bak-<timestamp>` and starts empty, so changing the key
   signs everyone out. To recover from a mistyped key, rename the backup back
