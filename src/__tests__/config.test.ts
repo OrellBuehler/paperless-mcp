@@ -69,6 +69,19 @@ describe("config", () => {
     vi.unstubAllEnvs();
   });
 
+  it("falls back for timeouts beyond the timer limit and caps retries at 10", async () => {
+    vi.stubEnv("PAPERLESS_TIMEOUT_MS", "9999999999");
+    vi.stubEnv("PAPERLESS_MAX_RETRIES", "50");
+    let mod = await import("../config.js");
+    expect(mod.adminClient.timeoutMs).toBe(60000);
+    expect(mod.adminClient.maxRetries).toBe(10);
+    vi.resetModules();
+    vi.stubEnv("PAPERLESS_TIMEOUT_MS", "2147483647");
+    mod = await import("../config.js");
+    expect(mod.adminClient.timeoutMs).toBe(2147483647);
+    vi.unstubAllEnvs();
+  });
+
   it("clientFor caches by token; admin token returns adminClient", async () => {
     const { clientFor, adminClient } = await import("../config.js");
     expect(clientFor("u1")).toBe(clientFor("u1"));

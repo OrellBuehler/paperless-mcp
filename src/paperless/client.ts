@@ -9,17 +9,27 @@ const RETRY_STATUSES = new Set([429, 502, 503, 504]);
 const BASE_DELAY_MS = 500;
 const MAX_DELAY_MS = 10000;
 
-function anySignal(signals: AbortSignal[]): AbortSignal {
-  if (typeof AbortSignal.any === "function") return AbortSignal.any(signals);
+function anySignal(signals: AbortSignal[]): { signal: AbortSignal; cleanup: () => void } {
+  if (typeof AbortSignal.any === "function")
+    return { signal: AbortSignal.any(signals), cleanup: () => {} };
   const ctrl = new AbortController();
+  const listeners: [AbortSignal, () => void][] = [];
+  const cleanup = () => {
+    for (const [s, fn] of listeners) s.removeEventListener("abort", fn);
+  };
   for (const s of signals) {
     if (s.aborted) {
       ctrl.abort(s.reason);
       break;
     }
-    s.addEventListener("abort", () => ctrl.abort(s.reason), { once: true });
+    const fn = () => {
+      cleanup();
+      ctrl.abort(s.reason);
+    };
+    s.addEventListener("abort", fn, { once: true });
+    listeners.push([s, fn]);
   }
-  return ctrl.signal;
+  return { signal: ctrl.signal, cleanup };
 }
 
 function retryAfterMs(res: Response): number | undefined {
@@ -89,18 +99,26 @@ export class PaperlessClient {
     path: string,
     init: RequestInit,
     handle: (res: Response) => Promise<T>,
-    retry = true,
+    { retry = true, timeout: timed = true, streams = false } = {},
   ): Promise<T> {
     const method = (init.method || "GET").toUpperCase();
-    const retries = retry && (method === "GET" || method === "HEAD") ? this.maxRetries : 0;
+    const idempotent = method === "GET" || method === "HEAD";
+    const retries = retry && idempotent ? this.maxRetries : 0;
+    const timeoutMs = timed ? this.timeoutMs : 0;
     const timeoutError = () =>
-      new Error(`Paperless request timed out after ${this.timeoutMs}ms: ${method} ${path}`);
+      new Error(`Paperless request timed out after ${timeoutMs}ms: ${method} ${path}`);
     for (let attempt = 0; ; attempt++) {
       const timeout = new AbortController();
-      const timer =
-        this.timeoutMs > 0 ? setTimeout(() => timeout.abort(), this.timeoutMs) : undefined;
-      const signal = init.signal ? anySignal([init.signal, timeout.signal]) : timeout.signal;
+      const timer = timeoutMs > 0 ? setTimeout(() => timeout.abort(), timeoutMs) : undefined;
+      const linked =
+        timer === undefined
+          ? { signal: init.signal ?? undefined, cleanup: () => {} }
+          : init.signal
+            ? anySignal([init.signal, timeout.signal])
+            : { signal: timeout.signal, cleanup: () => {} };
+      const signal = linked.signal;
       let delay: number;
+      let keepLinked = false;
       try {
         let res: Response | undefined;
         let failure: unknown;
@@ -119,7 +137,9 @@ export class PaperlessClient {
           res.body?.cancel().catch(() => {});
         } else {
           try {
-            return await handle(res);
+            const out = await handle(res);
+            keepLinked = streams;
+            return out;
           } catch (e) {
             if (timeout.signal.aborted && !init.signal?.aborted) throw timeoutError();
             throw e;
@@ -127,6 +147,7 @@ export class PaperlessClient {
         }
       } finally {
         clearTimeout(timer);
+        if (!keepLinked) linked.cleanup();
       }
       await sleep(delay, init.signal);
     }
@@ -165,7 +186,11 @@ export class PaperlessClient {
   }
 
   download(path: string, options: RequestInit = {}): Promise<Response> {
-    return this.request(path, this.withHeaders(options), async (res) => res);
+    const method = (options.method || "GET").toUpperCase();
+    return this.request(path, this.withHeaders(options), async (res) => res, {
+      timeout: method === "GET" || method === "HEAD",
+      streams: true,
+    });
   }
 
   upload(path: string, form: FormData, method = "POST"): Promise<Response> {
@@ -173,7 +198,7 @@ export class PaperlessClient {
       path,
       { method, headers: this.authHeaders(), body: form },
       async (res) => res,
-      false,
+      { retry: false, timeout: false, streams: true },
     );
   }
 }

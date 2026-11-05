@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { getEventListeners } from "node:events";
 import { PaperlessClient } from "../paperless/client.js";
 
 const fetchMock = vi.fn();
@@ -205,13 +206,48 @@ describe("timeouts", () => {
     );
   });
 
-  it("applies the timeout to uploads without retrying", async () => {
+  it("applies the timeout to POST requests through fetch", async () => {
     fetchMock.mockImplementation(hangingFetch);
     const c = new PaperlessClient("https://p.example.com", "t", "9", { timeoutMs: 20 });
-    await expect(c.upload("/api/documents/post_document/", new FormData())).rejects.toThrow(
-      "timed out after 20ms: POST /api/documents/post_document/",
+    await expect(c.fetch("/api/documents/bulk_edit/", { method: "POST" })).rejects.toThrow(
+      "timed out after 20ms: POST /api/documents/bulk_edit/",
     );
     expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it("applies the timeout to GET downloads", async () => {
+    fetchMock.mockImplementation(hangingFetch);
+    const c = new PaperlessClient("https://p.example.com", "t", "9", {
+      timeoutMs: 20,
+      maxRetries: 0,
+    });
+    await expect(c.download("/api/documents/1/download/")).rejects.toThrow(
+      "timed out after 20ms: GET /api/documents/1/download/",
+    );
+  });
+
+  it("does not time out uploads or POST downloads, but still forwards the caller signal", async () => {
+    vi.useFakeTimers();
+    const signals: (AbortSignal | null | undefined)[] = [];
+    fetchMock.mockImplementation(
+      (_url: string, opts: RequestInit) =>
+        new Promise((resolve) => {
+          signals.push(opts.signal);
+          setTimeout(() => resolve({ ok: true, status: 200 }), 600000);
+        }),
+    );
+    const ctrl = new AbortController();
+    const c = new PaperlessClient("https://p.example.com", "t", "9", { timeoutMs: 50 });
+    const up = c.upload("/api/documents/post_document/", new FormData());
+    const bulk = c.download("/api/documents/bulk_download/", {
+      method: "POST",
+      body: "{}",
+      signal: ctrl.signal,
+    });
+    await vi.advanceTimersByTimeAsync(600000);
+    await expect(up).resolves.toMatchObject({ status: 200 });
+    await expect(bulk).resolves.toMatchObject({ status: 200 });
+    expect(signals).toEqual([undefined, ctrl.signal]);
   });
 
   it("does not time out when timeoutMs is 0", async () => {
@@ -261,9 +297,9 @@ describe("timeouts", () => {
         timeoutMs: 20,
         maxRetries: 0,
       });
-      await expect(c.fetch("/x", { signal: new AbortController().signal })).rejects.toThrow(
-        "timed out after 20ms",
-      );
+      const caller = new AbortController().signal;
+      await expect(c.fetch("/x", { signal: caller })).rejects.toThrow("timed out after 20ms");
+      expect(getEventListeners(caller, "abort")).toHaveLength(0);
       const ctrl = new AbortController();
       const p = new PaperlessClient("https://p.example.com", "t").fetch("/x", {
         signal: ctrl.signal,

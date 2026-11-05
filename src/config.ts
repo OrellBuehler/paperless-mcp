@@ -27,9 +27,11 @@ function nonNegativeInt(value: string | undefined, fallback: number): number {
   return /^\d+$/.test(raw) ? Number(raw) : fallback;
 }
 
+const timeoutMs = nonNegativeInt(process.env.PAPERLESS_TIMEOUT_MS, 60000);
+
 const clientOptions = {
-  timeoutMs: nonNegativeInt(process.env.PAPERLESS_TIMEOUT_MS, 60000),
-  maxRetries: nonNegativeInt(process.env.PAPERLESS_MAX_RETRIES, 2),
+  timeoutMs: timeoutMs > 2147483647 ? 60000 : timeoutMs,
+  maxRetries: Math.min(nonNegativeInt(process.env.PAPERLESS_MAX_RETRIES, 2), 10),
 };
 
 export const config = {
