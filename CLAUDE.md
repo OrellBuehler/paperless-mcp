@@ -32,6 +32,7 @@ CI (`.github/workflows/ci.yml`) runs `format:check`, `lint`, `typecheck`, and `t
 
 Request flow: `index.ts` picks a transport based on `MCP_TRANSPORT`, then `server.ts:createServer(client)` registers all tool groups against a `PaperlessClient`. Every tool ultimately calls `client.fetch(...)` against the Paperless REST API.
 
+- **`src/server.ts`** — reads its version from `package.json` (resolved relative to the module, so it works from `dist/`), and registers tools through a proxy of the server that attaches each tool's annotations from `tools/annotations.ts` and skips tools filtered out by `PAPERLESS_TOOLSETS` (whole register groups), `PAPERLESS_READ_ONLY` (only `readOnlyHint: true`) and `PAPERLESS_DISABLED_TOOLS`. The tool files call `server.tool(...)` without annotations.
 - **`src/index.ts`** — entry point. `http` transport → `startHttpServer()`; otherwise stdio with `adminClient`.
 - **`src/config.ts`** — reads env at import time and **exits the process** if `PAPERLESS_URL`/`PAPERLESS_TOKEN` are missing. Exports `adminClient` and `clientFor(token)` (an LRU cache of per-token clients, used in http mode).
 - **`src/paperless/client.ts`** — thin `fetch` wrapper. Auth is `Authorization: Token <token>`. Provides `fetchAllPages`, `download`, `upload`, `getDocumentContent`. Throws on non-2xx with the response body in the message.
@@ -52,6 +53,7 @@ In http mode, **admin-gated tools check `client.token === config.adminToken`** (
 ## Conventions
 
 - **ESM with Node16 module resolution: all relative imports must end in `.js`** (e.g. `import { ok } from "../paperless/format.js"`), even though the source is `.ts`.
+- **Every new tool needs an entry in `src/tools/annotations.ts`** (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`), judged from what the handler actually does. `toolsets.test.ts` fails on unclassified or stale entries, and read-only mode hides tools without `readOnlyHint: true`. A new tool group also needs a `TOOLSETS` name in `config.ts` and an entry in `server.ts`.
 - **Tool handler shape:** `server.tool(name, description, zodSchema, async (args) => { try { return ok(await client.fetch(...)); } catch (e) { return err(e); } })`. Match the surrounding try/catch-`ok`/`err` style exactly.
 - **Don't add comments, docstrings, or type annotations** unless they already exist in the file you're editing (per global preference).
 - **Scope is intentionally read + create + update.** Saved views, users/groups, workflows, custom fields, mail accounts/rules, and share links have no delete tools by design — don't add them. Update tools for organization objects accept `owner` and `set_permissions` (`{ view, change }` → `{ users, groups }`) for sharing. Document lifecycle is the exception: `delete_document`, `delete_document_version`, and `empty_trash` exist because deleting documents is already in scope.

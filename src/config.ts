@@ -1,4 +1,5 @@
 import { PaperlessClient } from "./paperless/client.js";
+import { toolAnnotations } from "./tools/annotations.js";
 
 const baseUrl = (process.env.PAPERLESS_URL || "").replace(/\/+$/, "");
 const adminToken = process.env.PAPERLESS_TOKEN || "";
@@ -22,6 +23,42 @@ function apiVersionFrom(value: string | undefined): string {
 
 const apiVersion = apiVersionFrom(process.env.PAPERLESS_API_VERSION);
 
+export const TOOLSETS = [
+  "core",
+  "workflow",
+  "helpers",
+  "users",
+  "automation",
+  "documents",
+  "mail",
+  "sharing",
+  "system",
+  "search",
+] as const;
+export type Toolset = (typeof TOOLSETS)[number];
+
+function toolsetsFrom(value: string | undefined): Toolset[] {
+  const names = csv(value).map((s) => s.toLowerCase());
+  if (names.length === 0) return [...TOOLSETS];
+  const unknown = names.filter((n) => !(TOOLSETS as readonly string[]).includes(n));
+  if (unknown.length > 0) {
+    console.error(
+      `Unknown PAPERLESS_TOOLSETS: ${unknown.join(", ")}. Valid toolsets: ${TOOLSETS.join(", ")}`,
+    );
+    process.exit(1);
+  }
+  return names as Toolset[];
+}
+
+function disabledToolsFrom(value: string | undefined): string[] {
+  const names = csv(value);
+  const unknown = names.filter((n) => !Object.hasOwn(toolAnnotations, n));
+  if (unknown.length > 0) {
+    console.error(`Ignoring unknown tools in PAPERLESS_DISABLED_TOOLS: ${unknown.join(", ")}`);
+  }
+  return names;
+}
+
 export const config = {
   baseUrl,
   adminToken,
@@ -32,6 +69,9 @@ export const config = {
   allowedOrigins: csv(process.env.MCP_ALLOWED_ORIGINS),
   allowedHosts: csv(process.env.MCP_ALLOWED_HOSTS),
   oauthEnabled: Boolean((process.env.MCP_OAUTH_ISSUER || "").trim()),
+  toolsets: toolsetsFrom(process.env.PAPERLESS_TOOLSETS),
+  readOnly: /^(1|true|yes)$/i.test(process.env.PAPERLESS_READ_ONLY || ""),
+  disabledTools: disabledToolsFrom(process.env.PAPERLESS_DISABLED_TOOLS),
 };
 
 export const adminClient = new PaperlessClient(baseUrl, adminToken, apiVersion);
