@@ -43,45 +43,7 @@ const V9_TRIGGER_TYPES: Record<z.infer<typeof triggerSourceField>, string> = {
   manual: "manual_task",
 };
 
-function withVisibility(ids: unknown, id: number, show: boolean | undefined): unknown[] {
-  const list = Array.isArray(ids) ? ids : [];
-  if (show === undefined) return list;
-  const rest = list.filter((v) => Number(v) !== id);
-  return show ? [...rest, id] : rest;
-}
-
-async function setSavedViewVisibility(
-  client: PaperlessClient,
-  id: number,
-  {
-    show_on_dashboard,
-    show_in_sidebar,
-  }: { show_on_dashboard?: boolean; show_in_sidebar?: boolean },
-) {
-  const { settings = {} } = (await client.fetch("/api/ui_settings/")) as {
-    settings?: Record<string, unknown>;
-  };
-  const savedViews = (settings.saved_views ?? {}) as Record<string, unknown>;
-  const dashboard = withVisibility(savedViews.dashboard_views_visible_ids, id, show_on_dashboard);
-  const sidebar = withVisibility(savedViews.sidebar_views_visible_ids, id, show_in_sidebar);
-  await client.fetch("/api/ui_settings/", {
-    method: "POST",
-    body: JSON.stringify({
-      settings: {
-        ...settings,
-        saved_views: {
-          ...savedViews,
-          dashboard_views_visible_ids: dashboard,
-          sidebar_views_visible_ids: sidebar,
-        },
-      },
-    }),
-  });
-  return {
-    show_on_dashboard: dashboard.some((v) => Number(v) === id),
-    show_in_sidebar: sidebar.some((v) => Number(v) === id),
-  };
-}
+const V9_ACCEPT = { Accept: "application/json; version=9" };
 
 export function registerCoreTools(server: McpServer, client: PaperlessClient) {
   // --- System ---
@@ -123,19 +85,20 @@ export function registerCoreTools(server: McpServer, client: PaperlessClient) {
         .string()
         .optional()
         .describe(
-          "pending, started, success, failure or revoked on Paperless-ngx 3.x; uppercase (e.g. SUCCESS) on 2.x",
+          "pending, started, success, failure or revoked. Lowercased under v10; under v9 sent as given, which must be lowercase on Paperless-ngx 3.x and uppercase (e.g. SUCCESS) on 2.x",
         ),
       acknowledged: z.boolean().optional(),
       page: z.number().optional().describe("v10 only; v9 is unpaginated"),
       page_size: z.number().optional().describe("v10 only; v9 is unpaginated"),
     },
-    async ({ task_type, trigger_source, page, page_size, ...params }) => {
+    async ({ task_type, trigger_source, status, page, page_size, ...params }) => {
       try {
         const v10 = (await client.resolveApiVersion()) >= 10;
         const query = v10
-          ? { ...params, task_type, trigger_source, page, page_size }
+          ? { ...params, status: status?.toLowerCase(), task_type, trigger_source, page, page_size }
           : {
               ...params,
+              status,
               task_name: task_type && (V9_TASK_NAMES[task_type] ?? task_type),
               type: trigger_source && V9_TRIGGER_TYPES[trigger_source],
             };
@@ -852,7 +815,7 @@ export function registerCoreTools(server: McpServer, client: PaperlessClient) {
 
   server.tool(
     "create_saved_view",
-    "Create a new saved view. On API v10+ (Paperless-ngx 3.0+) show_on_dashboard/show_in_sidebar are no longer saved-view fields; they are applied to the current user's UI settings (settings.saved_views.dashboard_views_visible_ids / sidebar_views_visible_ids) like the web UI does.",
+    "Create a new saved view. Always sent as API v9, even when another version is configured: Paperless-ngx 3.0+ dropped show_on_dashboard/show_in_sidebar from saved views in v10 and keeps them in the user's UI settings, which its v9 compatibility layer updates server-side and reports back.",
     {
       name: z.string(),
       filter_rules: z
@@ -868,20 +831,13 @@ export function registerCoreTools(server: McpServer, client: PaperlessClient) {
     },
     async (body) => {
       try {
-        const { show_on_dashboard, show_in_sidebar, ...rest } = body;
-        const v10 = (await client.resolveApiVersion()) >= 10;
-        const view = (await client.fetch("/api/saved_views/", {
-          method: "POST",
-          body: JSON.stringify(v10 ? rest : body),
-        })) as { id: number };
-        if (!v10) return ok(view);
-        return ok({
-          ...view,
-          ...(await setSavedViewVisibility(client, view.id, {
-            show_on_dashboard,
-            show_in_sidebar,
-          })),
-        });
+        return ok(
+          await client.fetch("/api/saved_views/", {
+            method: "POST",
+            body: JSON.stringify(body),
+            headers: V9_ACCEPT,
+          }),
+        );
       } catch (e) {
         return err(e);
       }
@@ -890,7 +846,7 @@ export function registerCoreTools(server: McpServer, client: PaperlessClient) {
 
   server.tool(
     "update_saved_view",
-    "Update an existing saved view (partial update). On API v10+ show_on_dashboard/show_in_sidebar are applied to the current user's UI settings instead of the saved view.",
+    "Update an existing saved view (partial update). Always sent as API v9, even when another version is configured: Paperless-ngx 3.0+ dropped show_on_dashboard/show_in_sidebar from saved views in v10 and keeps them in the user's UI settings, which its v9 compatibility layer updates server-side and reports back.",
     {
       id: z.number(),
       name: z.string().optional(),
@@ -905,19 +861,13 @@ export function registerCoreTools(server: McpServer, client: PaperlessClient) {
     },
     async ({ id, ...body }) => {
       try {
-        const { show_on_dashboard, show_in_sidebar, ...rest } = body;
-        const v10 = (await client.resolveApiVersion()) >= 10;
-        const view = await client.fetch(`/api/saved_views/${id}/`, {
-          method: "PATCH",
-          body: JSON.stringify(v10 ? rest : body),
-        });
-        if (!v10 || (show_on_dashboard === undefined && show_in_sidebar === undefined)) {
-          return ok(view);
-        }
-        return ok({
-          ...(view as object),
-          ...(await setSavedViewVisibility(client, id, { show_on_dashboard, show_in_sidebar })),
-        });
+        return ok(
+          await client.fetch(`/api/saved_views/${id}/`, {
+            method: "PATCH",
+            body: JSON.stringify(body),
+            headers: V9_ACCEPT,
+          }),
+        );
       } catch (e) {
         return err(e);
       }

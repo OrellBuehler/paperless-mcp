@@ -71,12 +71,14 @@ describe("resolveApiVersion", () => {
     expect(mockFetch).toHaveBeenCalledTimes(1);
   });
 
-  it("falls back to 9 when the server sends no header", async () => {
-    mockFetch.mockResolvedValue(res({}));
+  it("falls back to 9 without caching when the server sends no header", async () => {
+    mockFetch
+      .mockResolvedValueOnce(res({}))
+      .mockResolvedValueOnce(res({}, { "X-Api-Version": "10" }));
     const c = new PaperlessClient("http://localhost:8000", "t", "");
     expect(await c.resolveApiVersion()).toBe(9);
-    expect(await c.resolveApiVersion()).toBe(9);
-    expect(mockFetch).toHaveBeenCalledTimes(1);
+    expect(await c.resolveApiVersion()).toBe(10);
+    expect(mockFetch).toHaveBeenCalledTimes(2);
   });
 });
 
@@ -86,6 +88,7 @@ describe("list_tasks", () => {
     const out = await collectTools("9").get("list_tasks")!({
       task_type: "sanity_check",
       trigger_source: "web_ui",
+      status: "SUCCESS",
       acknowledged: false,
       page: 2,
     });
@@ -93,6 +96,7 @@ describe("list_tasks", () => {
     expect(url.pathname).toBe("/api/tasks/");
     expect(Object.fromEntries(url.searchParams)).toEqual({
       acknowledged: "false",
+      status: "SUCCESS",
       task_name: "check_sanity",
       type: "manual_task",
     });
@@ -105,7 +109,7 @@ describe("list_tasks", () => {
     const out = await collectTools("10").get("list_tasks")!({
       task_type: "consume_file",
       trigger_source: "api_upload",
-      status: "failure",
+      status: "FAILURE",
       page: 2,
       page_size: 10,
     });
@@ -130,116 +134,39 @@ describe("list_tasks", () => {
   });
 });
 
-describe("saved view visibility", () => {
-  const uiSettings = {
-    user: { id: 1 },
-    settings: {
-      language: "de-de",
-      saved_views: {
-        dashboard_views_visible_ids: [3],
-        sidebar_views_visible_ids: [3, 11],
-        dashboard_views_sort_order: [3],
-      },
-    },
-    permissions: [],
-  };
+describe("saved view writes", () => {
+  for (const version of ["9", "10", ""]) {
+    it(`create_saved_view sends v9 with the visibility flags (configured: "${version}")`, async () => {
+      mockFetch.mockResolvedValue(res({ id: 12, show_on_dashboard: true, show_in_sidebar: false }));
+      const out = await collectTools(version).get("create_saved_view")!({
+        name: "Inbox",
+        filter_rules: [],
+        show_on_dashboard: true,
+        show_in_sidebar: false,
+      });
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+      const [url, opts] = mockFetch.mock.calls[0];
+      expect(url).toBe("http://localhost:8000/api/saved_views/");
+      expect(opts.method).toBe("POST");
+      expect(opts.headers.Accept).toBe("application/json; version=9");
+      expect(JSON.parse(opts.body)).toEqual({
+        name: "Inbox",
+        filter_rules: [],
+        show_on_dashboard: true,
+        show_in_sidebar: false,
+      });
+      expect(JSON.parse(out.content[0].text)).toMatchObject({ show_on_dashboard: true });
+    });
+  }
 
-  it("keeps the legacy fields on the saved view under v9", async () => {
+  it("update_saved_view sends v9 with the visibility flags under v10", async () => {
     mockFetch.mockResolvedValue(res({ id: 11 }));
-    await collectTools("9").get("create_saved_view")!({
-      name: "Inbox",
-      filter_rules: [],
-      show_on_dashboard: true,
-      show_in_sidebar: false,
-    });
+    await collectTools("10").get("update_saved_view")!({ id: 11, show_in_sidebar: false });
     expect(mockFetch).toHaveBeenCalledTimes(1);
-    expect(call(0).body).toEqual({
-      name: "Inbox",
-      filter_rules: [],
-      show_on_dashboard: true,
-      show_in_sidebar: false,
-    });
-  });
-
-  it("create_saved_view writes visibility to UI settings under v10", async () => {
-    mockFetch
-      .mockResolvedValueOnce(res({ id: 12, name: "Inbox" }))
-      .mockResolvedValueOnce(res(uiSettings))
-      .mockResolvedValueOnce(res({ success: true }));
-    const out = await collectTools("10").get("create_saved_view")!({
-      name: "Inbox",
-      filter_rules: [],
-      show_on_dashboard: true,
-      show_in_sidebar: false,
-    });
-    expect(call(0)).toMatchObject({
-      url: "http://localhost:8000/api/saved_views/",
-      method: "POST",
-      body: { name: "Inbox", filter_rules: [] },
-    });
-    expect(call(1).url).toBe("http://localhost:8000/api/ui_settings/");
-    expect(call(2)).toEqual({
-      url: "http://localhost:8000/api/ui_settings/",
-      method: "POST",
-      body: {
-        settings: {
-          language: "de-de",
-          saved_views: {
-            dashboard_views_visible_ids: [3, 12],
-            sidebar_views_visible_ids: [3, 11],
-            dashboard_views_sort_order: [3],
-          },
-        },
-      },
-    });
-    expect(JSON.parse(out.content[0].text)).toEqual({
-      id: 12,
-      name: "Inbox",
-      show_on_dashboard: true,
-      show_in_sidebar: false,
-    });
-  });
-
-  it("update_saved_view only touches the flags it was given under v10", async () => {
-    mockFetch
-      .mockResolvedValueOnce(res({ id: 11 }))
-      .mockResolvedValueOnce(res(uiSettings))
-      .mockResolvedValueOnce(res({ success: true }));
-    const out = await collectTools("10").get("update_saved_view")!({
-      id: 11,
-      show_in_sidebar: false,
-    });
-    expect(call(0)).toMatchObject({ method: "PATCH", body: {} });
-    expect(call(2).body.settings.saved_views).toEqual({
-      dashboard_views_visible_ids: [3],
-      sidebar_views_visible_ids: [3],
-      dashboard_views_sort_order: [3],
-    });
-    expect(JSON.parse(out.content[0].text)).toEqual({
-      id: 11,
-      show_on_dashboard: false,
-      show_in_sidebar: false,
-    });
-  });
-
-  it("update_saved_view skips UI settings when no visibility flag is given", async () => {
-    mockFetch.mockResolvedValue(res({ id: 11, name: "Renamed" }));
-    await collectTools("10").get("update_saved_view")!({ id: 11, name: "Renamed" });
-    expect(mockFetch).toHaveBeenCalledTimes(1);
-    expect(call(0).body).toEqual({ name: "Renamed" });
-  });
-
-  it("starts the visibility lists when UI settings have none", async () => {
-    mockFetch
-      .mockResolvedValueOnce(res({ id: 5 }, { "X-Api-Version": "10" }))
-      .mockResolvedValueOnce(res({ id: 5 }))
-      .mockResolvedValueOnce(res({ settings: {} }))
-      .mockResolvedValueOnce(res({ success: true }));
-    await collectTools("").get("update_saved_view")!({ id: 5, show_on_dashboard: true });
-    expect(call(3).body).toEqual({
-      settings: {
-        saved_views: { dashboard_views_visible_ids: [5], sidebar_views_visible_ids: [] },
-      },
-    });
+    const [url, opts] = mockFetch.mock.calls[0];
+    expect(url).toBe("http://localhost:8000/api/saved_views/11/");
+    expect(opts.method).toBe("PATCH");
+    expect(opts.headers.Accept).toBe("application/json; version=9");
+    expect(JSON.parse(opts.body)).toEqual({ show_in_sidebar: false });
   });
 });
