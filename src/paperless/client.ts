@@ -5,6 +5,7 @@ export class PaperlessClient {
   readonly token: string;
   readonly apiVersion: string;
   onUnauthorized?: () => void;
+  private detectedApiVersion?: number;
 
   constructor(baseUrl: string, token: string, apiVersion = "9") {
     this.baseUrl = baseUrl.replace(/\/+$/, "");
@@ -30,6 +31,7 @@ export class PaperlessClient {
         ...options.headers,
       },
     });
+    this.recordApiVersion(res);
     if (!res.ok) {
       if (res.status === 401) this.onUnauthorized?.();
       const body = await res.text();
@@ -37,6 +39,19 @@ export class PaperlessClient {
     }
     if (res.status === 204) return { success: true };
     return res.json();
+  }
+
+  private recordApiVersion(res: Response) {
+    if (this.apiVersion) return;
+    const advertised = parseInt(res.headers?.get?.("X-Api-Version") ?? "", 10);
+    if (advertised > 0) this.detectedApiVersion = advertised;
+  }
+
+  async resolveApiVersion(): Promise<number> {
+    const pinned = parseInt(this.apiVersion, 10);
+    if (pinned > 0) return pinned;
+    if (this.detectedApiVersion === undefined) await this.fetch("/api/profile/");
+    return this.detectedApiVersion ?? 9;
   }
 
   async fetchAllPages<T = unknown>(path: string): Promise<T[]> {

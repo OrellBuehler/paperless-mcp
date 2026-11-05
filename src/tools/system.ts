@@ -245,7 +245,7 @@ export function registerSystemTools(server: McpServer, client: PaperlessClient) 
 
   server.tool(
     "get_active_tasks",
-    "Currently pending and running tasks (capped at 50). Requires Paperless-ngx 3.0+.",
+    "Currently pending and running tasks (capped at 50). Requires Paperless-ngx 3.0+. Task fields follow the API version, as in list_tasks.",
     {},
     async () => {
       try {

@@ -153,14 +153,14 @@ Resources are fetched across all pages on every read and run with the requesting
 
 ## API Versioning
 
-Paperless-ngx negotiates its REST API version through the `Accept` header. This server pins **API v9** by default, which is what every tool above is written against and what both 2.x and 3.x servers accept.
+Paperless-ngx negotiates its REST API version through the `Accept` header. This server pins **API v9** by default, which both 2.x and 3.x servers accept.
 
-This matters because Paperless-ngx 3.0 made v10 the server-side default. Sending no version header at all means a 3.x server answers with v10 shapes, which differ in ways that break clients written for v9:
+Paperless-ngx 3.0 made v10 the server-side default. Every tool works under both versions; the ones affected by v10 adapt as follows:
 
-- `/api/tasks/` becomes paginated, and `task_name`/`type` are renamed to `task_type`/`trigger_source`
-- Saved views drop `show_on_dashboard` and `show_in_sidebar` (they move to UI settings), so `create_saved_view` would silently create views that never appear in the sidebar
+- **Tasks.** v10 paginates `/api/tasks/` and renames `task_name`/`type` to `task_type`/`trigger_source` (status values also become lowercase). `list_tasks` passes the response through in the negotiated shape, takes v10 filter names (`task_type`, `trigger_source`, `status`, `acknowledged`, `task_id`) and translates them to the v9 query params when needed; `page`/`page_size` only apply under v10.
+- **Saved views.** v10 drops `show_on_dashboard`/`show_in_sidebar` from saved views; visibility lives in each user's UI settings (`settings.saved_views.dashboard_views_visible_ids` and `sidebar_views_visible_ids`). `create_saved_view` and `update_saved_view` always send their request as v9, which 3.x still serves: its compatibility layer updates those UI settings server-side in the same request and returns both flags. `get_saved_view`/`list_saved_views` use the configured version, so under v10 they omit the flags; use `get_ui_settings` to see visibility.
 
-Set `PAPERLESS_API_VERSION=10` to opt into v10 once you are ready for those changes, or `PAPERLESS_API_VERSION=none` to send no header and let the server pick. Note that `create_saved_view` and `list_tasks` still assume v9 semantics.
+Set `PAPERLESS_API_VERSION=10` to opt into v10, or `PAPERLESS_API_VERSION=none` to send no header and let the server pick. With `none`, tools that depend on the version use the `X-Api-Version` response header, cached per client (one `GET /api/profile/` probes it if no request has been made yet). Paperless sets that header to the newest version it supports, not the one it served; in every release so far that is also its default (9 on 2.x, 10 on 3.x), so it identifies what a header-less request gets. If the header is missing (e.g. stripped by a proxy), v9 is assumed for that call and nothing is cached.
 
 ## Environment Variables
 
