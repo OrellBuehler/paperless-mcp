@@ -160,12 +160,25 @@ export function createHttpHandler(oauth: OAuth | null = null) {
   };
 }
 
+function flushOnShutdown(flush: () => void) {
+  process.on("exit", flush);
+  for (const signal of ["SIGTERM", "SIGINT"] as const)
+    process.once(signal, () => {
+      flush();
+      process.kill(process.pid, signal);
+    });
+}
+
 export async function startHttpServer(): Promise<void> {
   let oauth: OAuth | null = null;
   if (config.oauthEnabled) {
-    const { createOAuth, oauthSettingsFromEnv } = await import("./oauth.js");
+    const { createOAuth, oauthSettingsFromEnv, DEFAULT_LIMITS } = await import("./oauth.js");
+    const { stateStoreFromEnv } = await import("./oauth-state.js");
     try {
-      oauth = createOAuth(oauthSettingsFromEnv(), config.baseUrl);
+      const settings = oauthSettingsFromEnv();
+      const store = stateStoreFromEnv();
+      oauth = createOAuth(settings, config.baseUrl, DEFAULT_LIMITS, store);
+      if (store) flushOnShutdown(oauth.flush);
     } catch (e) {
       console.error(e instanceof Error ? e.message : String(e));
       process.exit(1);

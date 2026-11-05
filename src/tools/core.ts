@@ -1,8 +1,17 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { readFile } from "node:fs/promises";
-import { buildQS, ok, err, summarizeDocs } from "../paperless/format.js";
+import { buildQS, ok, err, image, summarizeDocs } from "../paperless/format.js";
 import type { PaperlessClient } from "../paperless/client.js";
+
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+const IMAGE_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"];
+
+function imageTooLarge(size: number) {
+  return new Error(
+    `image is ${size} bytes, over the ${MAX_IMAGE_BYTES} byte limit; use get_document_thumbnail for a smaller preview`,
+  );
+}
 
 const permissionGrant = z.object({
   users: z.array(z.number()).optional().describe("User IDs"),
@@ -20,6 +29,30 @@ const ownerField = z
 const setPermissionsField = permissionMap
   .optional()
   .describe("Grant view (read) and change (edit) access to users and groups");
+const triggerSourceField = z.enum([
+  "scheduled",
+  "web_ui",
+  "api_upload",
+  "folder_consume",
+  "email_consume",
+  "system",
+  "manual",
+]);
+const V9_TASK_NAMES: Record<string, string> = {
+  sanity_check: "check_sanity",
+  llm_index: "llmindex_update",
+};
+const V9_TRIGGER_TYPES: Record<z.infer<typeof triggerSourceField>, string> = {
+  scheduled: "scheduled_task",
+  system: "auto_task",
+  folder_consume: "auto_task",
+  email_consume: "auto_task",
+  web_ui: "manual_task",
+  api_upload: "manual_task",
+  manual: "manual_task",
+};
+
+const V9_ACCEPT = { Accept: "application/json; version=9" };
 
 export function registerCoreTools(server: McpServer, client: PaperlessClient) {
   // --- System ---
@@ -45,13 +78,45 @@ export function registerCoreTools(server: McpServer, client: PaperlessClient) {
     },
   );
 
-  server.tool("list_tasks", "List background tasks (consumption, etc.)", {}, async () => {
-    try {
-      return ok(await client.fetch("/api/tasks/"));
-    } catch (e) {
-      return err(e);
-    }
-  });
+  server.tool(
+    "list_tasks",
+    "List background tasks (consumption, etc.). The response is passed through in the shape of the negotiated API version: v9 returns a plain array with task_name, type and uppercase status; v10 (Paperless-ngx 3.0+) returns a paginated { count, next, previous, results } with task_type, trigger_source and lowercase status. Filters use v10 names and are translated for v9.",
+    {
+      task_id: z.string().optional().describe("Celery task UUID, e.g. as returned by upload"),
+      task_type: z
+        .string()
+        .optional()
+        .describe("e.g. consume_file, train_classifier, sanity_check, index_optimize, llm_index"),
+      trigger_source: triggerSourceField
+        .optional()
+        .describe("What started the task (v9 only distinguishes scheduled/auto/manual)"),
+      status: z
+        .string()
+        .optional()
+        .describe(
+          "pending, started, success, failure or revoked. Lowercased under v10; under v9 sent as given, which must be lowercase on Paperless-ngx 3.x and uppercase (e.g. SUCCESS) on 2.x",
+        ),
+      acknowledged: z.boolean().optional(),
+      page: z.number().optional().describe("v10 only; v9 is unpaginated"),
+      page_size: z.number().optional().describe("v10 only; v9 is unpaginated"),
+    },
+    async ({ task_type, trigger_source, status, page, page_size, ...params }) => {
+      try {
+        const v10 = (await client.resolveApiVersion()) >= 10;
+        const query = v10
+          ? { ...params, status: status?.toLowerCase(), task_type, trigger_source, page, page_size }
+          : {
+              ...params,
+              status,
+              task_name: task_type && (V9_TASK_NAMES[task_type] ?? task_type),
+              type: trigger_source && V9_TRIGGER_TYPES[trigger_source],
+            };
+        return ok(await client.fetch(`/api/tasks/${buildQS(query)}`));
+      } catch (e) {
+        return err(e);
+      }
+    },
+  );
 
   // --- Search ---
 
@@ -160,7 +225,7 @@ export function registerCoreTools(server: McpServer, client: PaperlessClient) {
 
   server.tool(
     "download_document",
-    "Download a document's content as text (only works for text-based documents)",
+    "Download a document's content. Text files are returned as text and PNG/JPEG/GIF/WebP images (up to 5 MB) as image content; image documents are usually archived as PDF, so pass original: true to get the image; other binary files such as PDFs return only their size. For PDFs use get_document_thumbnail to see the first page, find_document_pages to locate text, or get_document for the OCR text.",
     {
       id: z.number().describe("Document ID"),
       original: z.boolean().optional().describe("Download original instead of archived version"),
@@ -172,6 +237,17 @@ export function registerCoreTools(server: McpServer, client: PaperlessClient) {
         const ct = res.headers.get("content-type") || "";
         if (ct.includes("text") || ct.includes("json") || ct.includes("xml")) {
           return ok({ content_type: ct, content: await res.text() });
+        }
+        const mime = ct.split(";")[0].trim().toLowerCase();
+        if (IMAGE_TYPES.includes(mime)) {
+          const declared = Number(res.headers.get("content-length") || 0);
+          if (declared > MAX_IMAGE_BYTES) {
+            await res.body?.cancel();
+            throw imageTooLarge(declared);
+          }
+          const buf = await res.arrayBuffer();
+          if (buf.byteLength > MAX_IMAGE_BYTES) throw imageTooLarge(buf.byteLength);
+          return image(buf, mime);
         }
         const buf = await res.arrayBuffer();
         return ok({
@@ -759,7 +835,7 @@ export function registerCoreTools(server: McpServer, client: PaperlessClient) {
 
   server.tool(
     "create_saved_view",
-    "Create a new saved view",
+    "Create a new saved view. Always sent as API v9, even when another version is configured: Paperless-ngx 3.0+ dropped show_on_dashboard/show_in_sidebar from saved views in v10 and keeps them in the user's UI settings, which its v9 compatibility layer updates server-side and reports back.",
     {
       name: z.string(),
       filter_rules: z
@@ -779,6 +855,7 @@ export function registerCoreTools(server: McpServer, client: PaperlessClient) {
           await client.fetch("/api/saved_views/", {
             method: "POST",
             body: JSON.stringify(body),
+            headers: V9_ACCEPT,
           }),
         );
       } catch (e) {
@@ -789,7 +866,7 @@ export function registerCoreTools(server: McpServer, client: PaperlessClient) {
 
   server.tool(
     "update_saved_view",
-    "Update an existing saved view (partial update)",
+    "Update an existing saved view (partial update). Always sent as API v9, even when another version is configured: Paperless-ngx 3.0+ dropped show_on_dashboard/show_in_sidebar from saved views in v10 and keeps them in the user's UI settings, which its v9 compatibility layer updates server-side and reports back.",
     {
       id: z.number(),
       name: z.string().optional(),
@@ -808,6 +885,7 @@ export function registerCoreTools(server: McpServer, client: PaperlessClient) {
           await client.fetch(`/api/saved_views/${id}/`, {
             method: "PATCH",
             body: JSON.stringify(body),
+            headers: V9_ACCEPT,
           }),
         );
       } catch (e) {

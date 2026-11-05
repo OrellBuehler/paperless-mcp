@@ -17,6 +17,12 @@ export function ok(data: unknown) {
   return { content: [{ type: "text" as const, text: JSON.stringify(data) }] };
 }
 
+export function image(data: ArrayBuffer, mimeType: string) {
+  return {
+    content: [{ type: "image" as const, data: Buffer.from(data).toString("base64"), mimeType }],
+  };
+}
+
 export function err(e: unknown) {
   return { content: [{ type: "text" as const, text: String(e) }], isError: true as const };
 }

@@ -3,7 +3,7 @@ import { z } from "zod";
 import { readFile, writeFile } from "node:fs/promises";
 import { PDFDocument } from "pdf-lib";
 import { extractText } from "unpdf";
-import { ok, err, buildQS } from "../paperless/format.js";
+import { ok, err, image, buildQS } from "../paperless/format.js";
 import type { PaperlessClient } from "../paperless/client.js";
 
 const docSelection = {
@@ -26,6 +26,22 @@ export function registerDocumentTools(server: McpServer, client: PaperlessClient
     async ({ id }) => {
       try {
         return ok(await client.fetch(`/api/documents/${id}/history/`));
+      } catch (e) {
+        return err(e);
+      }
+    },
+  );
+
+  server.tool(
+    "get_document_thumbnail",
+    "Get a document's thumbnail (a preview of its first page) as an image, for vision-capable models",
+    { id: z.number().describe("Document ID") },
+    async ({ id }) => {
+      try {
+        const res = await client.download(`/api/documents/${id}/thumb/`);
+        if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+        const ct = (res.headers.get("content-type") || "").split(";")[0].trim();
+        return image(await res.arrayBuffer(), ct || "image/webp");
       } catch (e) {
         return err(e);
       }
