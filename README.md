@@ -129,6 +129,18 @@ These call endpoints that only exist on Paperless-ngx 3.0 and later. On older se
 
 > On Paperless-ngx 2.x, use `bulk_edit_documents` with `method: "rotate" | "merge" | "split"` instead of the dedicated document-editing tools. Both paths still work on 3.x.
 
+## Limiting tools
+
+Every tool carries MCP annotations (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`) so clients can tell reads from writes, ask for confirmation before destructive calls, and flag tools that reach beyond Paperless: `upload_from_url`, `email_document`, `email_documents`, `process_mail_account`, `test_mail_account`, `get_remote_version`, `get_document_ai_suggestions`, `run_task` (its `llm_index` task sends content to the configured LLM), and the semantic-search tools that call the embedding provider.
+
+All tools are registered by default. To save model context or lock the server down:
+
+- `PAPERLESS_TOOLSETS=core,helpers` registers only those groups. Groups: `core`, `workflow`, `helpers`, `users`, `automation`, `documents`, `mail`, `sharing`, `system`, `search`. An unknown name stops the server at startup. `search` only registers tools when `EMBEDDINGS_ENABLED=true`; selecting it without embeddings logs a warning.
+- `PAPERLESS_READ_ONLY=true` registers only tools annotated read-only.
+- `PAPERLESS_DISABLED_TOOLS=delete_document,empty_trash` skips individual tools.
+
+The three combine, and apply to both transports. If together they leave no tools at all, the server exits at startup with an error.
+
 ## Prompts and resources
 
 Besides tools, the server exposes MCP prompts (reusable task instructions your client can offer as slash commands) and read-only resources (compact lookups agents can load as context).
@@ -176,6 +188,9 @@ Set `PAPERLESS_API_VERSION=10` to opt into v10, or `PAPERLESS_API_VERSION=none` 
 | `MCP_TRANSPORT`                | No              | `stdio` (default) or `http`                                                                                                                                       |
 | `PORT`                         | No              | Port for the HTTP server (default: `3001`, http mode only)                                                                                                        |
 | `EMBEDDINGS_ENABLED`           | No              | Set to `true` to enable semantic search tools (default: off)                                                                                                      |
+| `PAPERLESS_TOOLSETS`           | No              | Comma-separated tool groups to register (default: all). See [Limiting tools](#limiting-tools)                                                                     |
+| `PAPERLESS_READ_ONLY`          | No              | Set to `true` to register only read-only tools (default: off)                                                                                                     |
+| `PAPERLESS_DISABLED_TOOLS`     | No              | Comma-separated tool names to skip                                                                                                                                |
 | `MCP_ALLOWED_ORIGINS`          | No              | Comma-separated `Origin` allowlist for browser clients (http mode). Empty (default) blocks all cross-origin browser requests; use `*` to allow any                |
 | `MCP_ALLOWED_HOSTS`            | No              | Comma-separated `Host` allowlist for DNS-rebinding protection (http mode). Empty (default) disables host validation                                               |
 | `MCP_OAUTH_ISSUER`             | No              | OIDC issuer URL of your identity provider. Setting it enables [OAuth mode](#oauth-optional) (http mode only)                                                      |

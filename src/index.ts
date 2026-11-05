@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { config, adminClient } from "./config.js";
-import { createServer } from "./server.js";
+import { createServer, checkToolSelection } from "./server.js";
 import { startHttpServer } from "./http.js";
+
+await checkToolSelection();
 
 if (config.transport === "http") {
   await startHttpServer();

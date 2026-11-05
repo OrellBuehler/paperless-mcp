@@ -22,6 +22,33 @@ function apiVersionFrom(value: string | undefined): string {
 
 const apiVersion = apiVersionFrom(process.env.PAPERLESS_API_VERSION);
 
+export const TOOLSETS = [
+  "core",
+  "workflow",
+  "helpers",
+  "users",
+  "automation",
+  "documents",
+  "mail",
+  "sharing",
+  "system",
+  "search",
+] as const;
+export type Toolset = (typeof TOOLSETS)[number];
+
+function toolsetsFrom(value: string | undefined): Toolset[] {
+  const names = csv(value).map((s) => s.toLowerCase());
+  if (names.length === 0) return [...TOOLSETS];
+  const unknown = names.filter((n) => !(TOOLSETS as readonly string[]).includes(n));
+  if (unknown.length > 0) {
+    console.error(
+      `Unknown PAPERLESS_TOOLSETS: ${unknown.join(", ")}. Valid toolsets: ${TOOLSETS.join(", ")}`,
+    );
+    process.exit(1);
+  }
+  return names as Toolset[];
+}
+
 function nonNegativeInt(value: string | undefined, fallback: number): number {
   const raw = (value ?? "").trim();
   return /^\d+$/.test(raw) ? Number(raw) : fallback;
@@ -44,7 +71,20 @@ export const config = {
   allowedOrigins: csv(process.env.MCP_ALLOWED_ORIGINS),
   allowedHosts: csv(process.env.MCP_ALLOWED_HOSTS),
   oauthEnabled: Boolean((process.env.MCP_OAUTH_ISSUER || "").trim()),
+  toolsets: toolsetsFrom(process.env.PAPERLESS_TOOLSETS),
+  readOnly: /^(1|true|yes)$/i.test(process.env.PAPERLESS_READ_ONLY || ""),
+  disabledTools: csv(process.env.PAPERLESS_DISABLED_TOOLS),
 };
+
+if (
+  process.env.PAPERLESS_TOOLSETS &&
+  config.toolsets.includes("search") &&
+  !config.embeddingsEnabled
+) {
+  console.error(
+    "PAPERLESS_TOOLSETS includes search, but search tools need EMBEDDINGS_ENABLED=true",
+  );
+}
 
 export const adminClient = new PaperlessClient(baseUrl, adminToken, apiVersion, clientOptions);
 
