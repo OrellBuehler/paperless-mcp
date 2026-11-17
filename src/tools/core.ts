@@ -54,6 +54,69 @@ const V9_TRIGGER_TYPES: Record<z.infer<typeof triggerSourceField>, string> = {
 
 const V9_ACCEPT = { Accept: "application/json; version=9" };
 
+const savedViewIcon = z
+  .enum([
+    "archive",
+    "bank",
+    "basket",
+    "bell",
+    "bookmark",
+    "boxes",
+    "briefcase",
+    "building",
+    "calculator",
+    "calendar",
+    "camera",
+    "card-checklist",
+    "cash",
+    "chat-left-text",
+    "check-circle",
+    "clipboard",
+    "clock-history",
+    "credit-card",
+    "download",
+    "envelope",
+    "exclamation-triangle",
+    "file-earmark",
+    "file-earmark-check",
+    "file-earmark-lock",
+    "file-earmark-medical",
+    "file-earmark-person",
+    "file-earmark-spreadsheet",
+    "file-text",
+    "files",
+    "folder",
+    "funnel",
+    "gear",
+    "globe2",
+    "hash",
+    "heart",
+    "house",
+    "inbox",
+    "journals",
+    "list-task",
+    "newspaper",
+    "paperclip",
+    "people",
+    "person",
+    "printer",
+    "receipt",
+    "safe",
+    "search",
+    "send",
+    "shop",
+    "stack",
+    "stars",
+    "tag",
+    "tags",
+    "telephone",
+    "truck",
+    "upc-scan",
+    "wallet2",
+  ])
+  .optional()
+  .describe("Icon shown for the view (server default funnel). Paperless-ngx 3.1+");
+
 export function registerCoreTools(server: McpServer, client: PaperlessClient) {
   // --- System ---
 
@@ -82,11 +145,18 @@ export function registerCoreTools(server: McpServer, client: PaperlessClient) {
     "list_tasks",
     "List background tasks (consumption, etc.). The response is passed through in the shape of the negotiated API version: v9 returns a plain array with task_name, type and uppercase status; v10 (Paperless-ngx 3.0+) returns a paginated { count, next, previous, results } with task_type, trigger_source and lowercase status. Filters use v10 names and are translated for v9.",
     {
-      task_id: z.string().optional().describe("Celery task UUID, e.g. as returned by upload"),
+      task_id: z
+        .string()
+        .optional()
+        .describe(
+          "Celery task UUID, e.g. as returned by upload or, on Paperless-ngx 3.5+, by bulk edits",
+        ),
       task_type: z
         .string()
         .optional()
-        .describe("e.g. consume_file, train_classifier, sanity_check, index_optimize, llm_index"),
+        .describe(
+          "e.g. consume_file, train_classifier, sanity_check, index_optimize, llm_index, bulk_update or bulk_delete (bulk edits on Paperless-ngx 3.5+)",
+        ),
       trigger_source: triggerSourceField
         .optional()
         .describe("What started the task (v9 only distinguishes scheduled/auto/manual)"),
@@ -122,7 +192,7 @@ export function registerCoreTools(server: McpServer, client: PaperlessClient) {
 
   server.tool(
     "search_documents",
-    "Full-text search across all documents. Returns metadata only (no OCR content) — use get_document or get_documents for full text.",
+    "Full-text search across all documents. Returns metadata only (no OCR content) — use get_document or get_documents for full text. This is Paperless's global search and returns at most 3 documents; on 3.x it does simple text matching without field syntax. Use list_documents with query for field searches such as barcodes:.",
     {
       query: z.string().describe("Search query"),
       db_only: z.boolean().optional().describe("Search database only, skip full-text index"),
@@ -160,7 +230,12 @@ export function registerCoreTools(server: McpServer, client: PaperlessClient) {
     {
       page: z.number().optional(),
       page_size: z.number().optional(),
-      query: z.string().optional().describe("Full-text search query"),
+      query: z
+        .string()
+        .optional()
+        .describe(
+          'Full-text search query. Advanced syntax: AND/OR/NOT in capitals, "exact phrase", field:value such as title:invoice, tag:bills, correspondent:"acme corp", notes.note:text, custom_fields.value:text. With Paperless-ngx 3.3+ and barcode storage enabled (update_config barcode_store_values), barcodes:<value> (same as barcodes.value:) and barcodes.format:<type> (e.g. barcodes.format:qrcode) search stored barcode contents; the barcodes themselves are listed by get_document_metadata',
+        ),
       title__icontains: z.string().optional(),
       correspondent__id: z.number().optional(),
       correspondent__id__in: z
@@ -176,6 +251,12 @@ export function registerCoreTools(server: McpServer, client: PaperlessClient) {
       tags__id__all: z.array(z.number()).optional().describe("Must have ALL these tags"),
       tags__id__in: z.array(z.number()).optional().describe("Must have at least one of these tags"),
       is_in_inbox: z.boolean().optional(),
+      has_duplicates: z
+        .boolean()
+        .optional()
+        .describe(
+          "true: only documents that share their content (same original or archive checksum) with another document you can view, trashed ones included; false: only those that do not. Paperless-ngx 3.2+; get_document lists a document's duplicate_documents",
+        ),
       created__date__gt: z.string().optional().describe("Created after (YYYY-MM-DD), exclusive"),
       created__date__gte: z
         .string()
@@ -197,7 +278,7 @@ export function registerCoreTools(server: McpServer, client: PaperlessClient) {
         .string()
         .optional()
         .describe(
-          'JSON custom field query expression, e.g. ["Betrag", "gt", 100] or ["AND", [["Steuerjahr", "exact", "2025"], ["Betrag", "exists", true]]]',
+          'JSON custom field query expression, e.g. ["Betrag", "gt", 100] or ["AND", [["Steuerjahr", "exact", "2025"], ["Betrag", "exists", true]]]. Date fields also accept relative expressions that are resolved when the query runs (Paperless-ngx 3.4+), e.g. ["Ablauf", "range", ["today", "in 30 days"]] or ["Ablauf", "lt", "1 month ago"]',
         ),
       ordering: z.string().optional().describe("Field to order by, prefix with - for descending"),
     },
@@ -212,7 +293,7 @@ export function registerCoreTools(server: McpServer, client: PaperlessClient) {
 
   server.tool(
     "get_document",
-    "Get a single document by ID, including its full OCR text content",
+    "Get a single document by ID, including its full OCR text content and, on Paperless-ngx 3.x, duplicate_documents (other visible documents with the same content; only filled in here, not in list results)",
     { id: z.number().describe("Document ID") },
     async ({ id }) => {
       try {
@@ -354,7 +435,7 @@ export function registerCoreTools(server: McpServer, client: PaperlessClient) {
 
   server.tool(
     "get_document_metadata",
-    "Get metadata (original filename, checksum, dates, etc.) for a document",
+    "Get metadata (original filename, checksum, dates, etc.) for a document. On Paperless-ngx 3.3+ with barcode storage enabled (update_config barcode_store_values), also lists the document's barcodes as { page, value, format }",
     { id: z.number().describe("Document ID") },
     async ({ id }) => {
       try {
@@ -397,13 +478,17 @@ export function registerCoreTools(server: McpServer, client: PaperlessClient) {
     {
       id: z.number().describe("Document ID"),
       note: z.string().describe("Note text"),
+      format: z
+        .enum(["plain", "markdown"])
+        .optional()
+        .describe("How the note is rendered (server default plain). Paperless-ngx 3.5+"),
     },
-    async ({ id, note }) => {
+    async ({ id, note, format }) => {
       try {
         return ok(
           await client.fetch(`/api/documents/${id}/notes/`, {
             method: "POST",
-            body: JSON.stringify({ note }),
+            body: JSON.stringify(format === undefined ? { note } : { note, format }),
           }),
         );
       } catch (e) {
@@ -437,13 +522,13 @@ export function registerCoreTools(server: McpServer, client: PaperlessClient) {
 
   server.tool(
     "bulk_edit_documents",
-    "Perform bulk operations on multiple documents (set tags, correspondent, type, delete, merge, etc.)",
+    "Perform bulk operations on multiple documents by ID. Methods and parameters: set_correspondent { correspondent: id | null }; set_document_type { document_type: id | null }; set_storage_path { storage_path: id | null }; add_tag / remove_tag { tag: id }; modify_tags { add_tags: id[], remove_tags: id[] } (both required); modify_custom_fields { add_custom_fields: id[] | { id: value }, remove_custom_fields: id[] } (both required); set_permissions { set_permissions: { view, change } | null, owner?: id | null, merge?: boolean }; delete (moves to the trash); reprocess { remote_ocr?: boolean (3.1+) }; run_workflow { workflow: id, filter_documents?: boolean } (3.5+, see run_workflow); rotate { degrees }, merge, split { pages: '1-2,5' }, delete_pages { pages: number[] }, edit_pdf { operations } and remove_password { password } (3.0+ only), for which the dedicated tools are preferred on 3.0+. On Paperless-ngx 3.5+ every method is queued: the response is { result: \"OK\", task_id } and the change is applied in the background, so documents may not reflect it yet. Check the task with list_tasks (task_id) before relying on the result. Older servers apply the change before responding.",
     {
       documents: z.array(z.number()).describe("Array of document IDs"),
       method: z
         .string()
         .describe(
-          "Operation: set_correspondent, set_document_type, set_storage_path, add_tag, remove_tag, modify_tags, delete, redo_ocr, reprocess, set_permissions, rotate, merge, split, convert",
+          "Operation: set_correspondent, set_document_type, set_storage_path, add_tag, remove_tag, modify_tags, modify_custom_fields, set_permissions, delete, reprocess, run_workflow, rotate, merge, split, delete_pages, edit_pdf, remove_password",
         ),
       parameters: z.record(z.unknown()).optional().describe("Operation-specific parameters"),
     },
@@ -841,8 +926,9 @@ export function registerCoreTools(server: McpServer, client: PaperlessClient) {
       filter_rules: z
         .array(z.object({ rule_type: z.number(), value: z.string() }))
         .describe(
-          "Filter rules: rule_type is a Paperless filter code (e.g. 0=title contains, 3=correspondent id, 6=has tag, 19=ASN); value is the matched value as a string.",
+          "Filter rules: rule_type is a Paperless filter code (e.g. 0=title contains, 3=correspondent id, 6=has tag, 19=ASN, 50=has duplicates on Paperless-ngx 3.2+); value is the matched value as a string.",
         ),
+      icon: savedViewIcon,
       show_on_dashboard: z.boolean(),
       show_in_sidebar: z.boolean(),
       sort_field: z.string().optional().describe("Field to sort by, e.g. 'created'"),
@@ -871,6 +957,7 @@ export function registerCoreTools(server: McpServer, client: PaperlessClient) {
       id: z.number(),
       name: z.string().optional(),
       filter_rules: z.array(z.object({ rule_type: z.number(), value: z.string() })).optional(),
+      icon: savedViewIcon,
       show_on_dashboard: z.boolean().optional(),
       show_in_sidebar: z.boolean().optional(),
       sort_field: z.string().optional(),

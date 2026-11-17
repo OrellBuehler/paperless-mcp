@@ -7,7 +7,7 @@
 
 **Website:** <https://orellbuehler.github.io/paperless-mcp/>
 
-Connect AI agents to [Paperless-ngx](https://docs.paperless-ngx.com/). This [Model Context Protocol](https://modelcontextprotocol.io/) server exposes the Paperless-ngx REST API as 115+ tools, so assistants like Claude can search, upload, tag, and organize your documents — with optional semantic search over your whole archive using local vector embeddings.
+Connect AI agents to [Paperless-ngx](https://docs.paperless-ngx.com/). This [Model Context Protocol](https://modelcontextprotocol.io/) server exposes the Paperless-ngx REST API as 120+ tools, so assistants like Claude can search, upload, tag, and organize your documents — with optional semantic search over your whole archive using local vector embeddings.
 
 Works with any MCP client: Claude Code, Claude Desktop, [Ontheia](https://ontheia.ai), or your own agent.
 
@@ -87,7 +87,7 @@ Semantic search is off by default. To enable it, add `"EMBEDDINGS_ENABLED": "tru
 | Custom fields       | `list_custom_fields`, `get_custom_field`, `create_custom_field`, `update_custom_field`                                                                                           |
 | Users               | `list_users`, `get_user`, `create_user`, `update_user`                                                                                                                           |
 | Groups              | `list_groups`, `get_group`, `create_group`, `update_group`                                                                                                                       |
-| Paperless workflows | `list_workflows`, `get_workflow`, `create_workflow`, `update_workflow`                                                                                                           |
+| Paperless workflows | `list_workflows`, `get_workflow`, `create_workflow`, `update_workflow`, `run_workflow`                                                                                           |
 | Mail accounts       | `list_mail_accounts`, `get_mail_account`, `create_mail_account`, `update_mail_account`, `test_mail_account`, `process_mail_account`                                              |
 | Mail rules          | `list_mail_rules`, `get_mail_rule`, `create_mail_rule`, `update_mail_rule`, `list_processed_mail`                                                                                |
 | Sharing             | `list_share_links`, `get_share_link`, `create_share_link`, `get_document_share_links`                                                                                            |
@@ -129,9 +129,23 @@ These call endpoints that only exist on Paperless-ngx 3.0 and later. On older se
 
 > On Paperless-ngx 2.x, use `bulk_edit_documents` with `method: "rotate" | "merge" | "split"` instead of the dedicated document-editing tools. Both paths still work on 3.x.
 
+### Newer Paperless-ngx releases
+
+Tools and parameters that need a more recent Paperless-ngx than the 3.0 baseline above.
+
+| Paperless-ngx | Added                                                                                                                                                                                                                       |
+| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 3.1+          | `merge_documents_as_versions`; `icon` on `create_saved_view` / `update_saved_view`; `remote_ocr` on `reprocess_documents`; workflow action types 7 (remote OCR) and 8 (apply AI suggestions)                                |
+| 3.2+          | `has_duplicates` filter on `list_documents` (a document's `duplicate_documents` come with `get_document`); `excluded_documents` on `rotate_documents` and `reprocess_documents`; saved view filter rule 50 (has duplicates) |
+| 3.3+          | Barcode contents: enable `barcode_store_values` with `update_config`, read `barcodes` from `get_document_metadata`, search `barcodes:<value>` or `barcodes.format:<type>` through the `query` of `list_documents`           |
+| 3.4+          | Relative dates such as `today`, `in 30 days` or `1 month ago` in `custom_field_query` on date custom fields                                                                                                                 |
+| 3.5+          | `run_workflow` (needs a workflow with a manual trigger, type 5); `format: "markdown"` for `add_document_note`; `trigger_type` and `enabled` filters on `list_workflows`                                                     |
+
+Paperless-ngx 3.5 also runs every document bulk operation in the background. `bulk_edit_documents`, `bulk_tag_by_content`, `run_workflow`, `merge_documents_as_versions` and the document-editing tools above then return `{ "result": "OK", "task_id": "…" }` instead of the finished result, and the change only shows up once that task has completed. Pass the `task_id` to `list_tasks` to check on it (bulk tasks have the type `bulk_update`, or `bulk_delete` for deletions).
+
 ## Limiting tools
 
-Every tool carries MCP annotations (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`) so clients can tell reads from writes, ask for confirmation before destructive calls, and flag tools that reach beyond Paperless: `upload_from_url`, `email_document`, `email_documents`, `process_mail_account`, `test_mail_account`, `get_remote_version`, `get_document_ai_suggestions`, `run_task` (its `llm_index` task sends content to the configured LLM), and the semantic-search tools that call the embedding provider.
+Every tool carries MCP annotations (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`) so clients can tell reads from writes, ask for confirmation before destructive calls, and flag tools that reach beyond Paperless: `upload_from_url`, `email_document`, `email_documents`, `process_mail_account`, `test_mail_account`, `get_remote_version`, `get_document_ai_suggestions`, `run_task` (its `llm_index` task sends content to the configured LLM), `run_workflow` (a workflow can send emails and webhooks or query an AI service), and the semantic-search tools that call the embedding provider.
 
 All tools are registered by default. To save model context or lock the server down:
 

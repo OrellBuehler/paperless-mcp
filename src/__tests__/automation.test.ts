@@ -39,9 +39,78 @@ describe("workflow tools", () => {
   });
 
   it("registers all workflow tools", () => {
-    for (const name of ["list_workflows", "get_workflow", "create_workflow", "update_workflow"]) {
+    for (const name of [
+      "list_workflows",
+      "get_workflow",
+      "create_workflow",
+      "update_workflow",
+      "run_workflow",
+    ]) {
       expect(tools.has(name)).toBe(true);
     }
+  });
+
+  it("create_workflow passes a manual trigger and the newer action types through", async () => {
+    mockFetch.mockResolvedValueOnce(mockJson({ id: 2 }));
+    const triggers = [{ type: 5, filter_has_tags: [3] }];
+    const actions = [
+      { type: 8, ai_suggestion_fields: ["title", "tags"], ai_overwrite_existing: true },
+    ];
+    await tools.get("create_workflow")!({ name: "Manual AI", triggers, actions });
+    expect(mockFetch).toHaveBeenCalledWith(
+      "http://localhost:8000/api/workflows/",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ name: "Manual AI", triggers, actions }),
+      }),
+    );
+  });
+
+  it("list_workflows forwards the trigger type and enabled filters", async () => {
+    mockFetch.mockResolvedValueOnce(mockJson({ count: 0, results: [] }));
+    await tools.get("list_workflows")!({ trigger_type: 5, enabled: true });
+    const url = new URL(mockFetch.mock.calls[0][0] as string);
+    expect(url.pathname).toBe("/api/workflows/");
+    expect(Object.fromEntries(url.searchParams)).toEqual({ trigger_type: "5", enabled: "true" });
+  });
+
+  it("run_workflow queues the run_workflow bulk edit method", async () => {
+    mockFetch.mockResolvedValueOnce(mockJson({ result: "OK", task_id: "abc" }));
+    const res = await tools.get("run_workflow")!({ documents: [1, 2], workflow: 7 });
+    expect(mockFetch).toHaveBeenCalledWith(
+      "http://localhost:8000/api/documents/bulk_edit/",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          documents: [1, 2],
+          method: "run_workflow",
+          parameters: { workflow: 7 },
+        }),
+      }),
+    );
+    expect(JSON.parse(res.content[0].text)).toEqual({ result: "OK", task_id: "abc" });
+  });
+
+  it("run_workflow sends filter_documents only when given", async () => {
+    mockFetch.mockResolvedValueOnce(mockJson({ result: "OK", task_id: "abc" }));
+    await tools.get("run_workflow")!({ documents: [4], workflow: 7, filter_documents: false });
+    expect(JSON.parse(mockFetch.mock.calls[0][1].body)).toEqual({
+      documents: [4],
+      method: "run_workflow",
+      parameters: { workflow: 7, filter_documents: false },
+    });
+  });
+
+  it("run_workflow returns the server error when the workflow has no manual trigger", async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 400,
+      statusText: "Bad Request",
+      text: () => Promise.resolve('{"parameters":["Workflow does not have a manual trigger"]}'),
+    });
+    const res = await tools.get("run_workflow")!({ documents: [1], workflow: 9 });
+    expect(res.isError).toBe(true);
+    expect(res.content[0].text).toContain("manual trigger");
   });
 
   it("create_workflow POSTs name with inline triggers and actions", async () => {

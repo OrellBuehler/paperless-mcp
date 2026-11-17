@@ -124,6 +124,31 @@ describe("list_tasks", () => {
     expect(JSON.parse(out.content[0].text)).toEqual(page);
   });
 
+  it("looks up a bulk edit task by id on v9", async () => {
+    const task = { task_id: "t-1", task_name: "bulk_update", status: "SUCCESS" };
+    mockFetch.mockResolvedValue(res([task]));
+    const out = await collectTools("9").get("list_tasks")!({
+      task_id: "t-1",
+      task_type: "bulk_update",
+    });
+    const url = new URL(call(0).url);
+    expect(url.pathname).toBe("/api/tasks/");
+    expect(Object.fromEntries(url.searchParams)).toEqual({
+      task_id: "t-1",
+      task_name: "bulk_update",
+    });
+    expect(JSON.parse(out.content[0].text)).toEqual([task]);
+  });
+
+  it("looks up a bulk edit task by id on v10", async () => {
+    mockFetch.mockResolvedValue(res({ count: 0, next: null, previous: null, results: [] }));
+    await collectTools("10").get("list_tasks")!({ task_id: "t-2", task_type: "bulk_delete" });
+    expect(Object.fromEntries(new URL(call(0).url).searchParams)).toEqual({
+      task_id: "t-2",
+      task_type: "bulk_delete",
+    });
+  });
+
   it("detects v10 when no version is pinned", async () => {
     mockFetch
       .mockResolvedValueOnce(res({}, { "X-Api-Version": "10" }))
