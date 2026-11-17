@@ -38,7 +38,11 @@ export function registerSystemTools(server: McpServer, client: PaperlessClient) 
       rotate_pages_threshold: z.number().nullable().optional(),
       max_image_pixels: z.number().nullable().optional(),
       color_conversion_strategy: z.string().nullable().optional(),
-      user_args: z.record(z.unknown()).nullable().optional().describe("Extra OCRmyPDF arguments"),
+      user_args: z
+        .record(z.string(), z.unknown())
+        .nullable()
+        .optional()
+        .describe("Extra OCRmyPDF arguments"),
       app_title: z.string().nullable().optional(),
       app_logo: z.string().nullable().optional(),
       barcodes_enabled: z.boolean().nullable().optional(),
@@ -51,7 +55,7 @@ export function registerSystemTools(server: McpServer, client: PaperlessClient) 
       barcode_dpi: z.number().nullable().optional(),
       barcode_max_pages: z.number().nullable().optional(),
       barcode_enable_tag: z.boolean().nullable().optional(),
-      barcode_tag_mapping: z.record(z.unknown()).nullable().optional(),
+      barcode_tag_mapping: z.record(z.string(), z.unknown()).nullable().optional(),
     },
     async ({ id, ...body }) => {
       try {

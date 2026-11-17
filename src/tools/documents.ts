@@ -13,7 +13,7 @@ const docSelection = {
     .optional()
     .describe("Apply to every document matching `filters` instead of a list"),
   filters: z
-    .record(z.unknown())
+    .record(z.string(), z.unknown())
     .optional()
     .describe("Filter object used when `all` is true, e.g. { tags__id__all: [3] }"),
 };
@@ -342,7 +342,7 @@ export function registerDocumentTools(server: McpServer, client: PaperlessClient
     {
       documents: z.array(z.number()).describe("Document IDs (normally exactly one)"),
       operations: z
-        .array(z.record(z.unknown()))
+        .array(z.record(z.string(), z.unknown()))
         .describe(
           "Page operations. Each object: { page: number (1-based source page), rotate?: 0|90|180|270, doc?: number (output document index for splitting) }. Omit a page to delete it.",
         ),

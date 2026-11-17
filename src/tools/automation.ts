@@ -4,7 +4,7 @@ import { buildQS, ok, err } from "../paperless/format.js";
 import type { PaperlessClient } from "../paperless/client.js";
 
 const triggersSchema = z
-  .array(z.record(z.unknown()))
+  .array(z.record(z.string(), z.unknown()))
   .optional()
   .describe(
     "Workflow triggers. Each object: { type: 1=consumption | 2=document added | 3=document updated; " +
@@ -14,7 +14,7 @@ const triggersSchema = z
   );
 
 const actionsSchema = z
-  .array(z.record(z.unknown()))
+  .array(z.record(z.string(), z.unknown()))
   .optional()
   .describe(
     "Workflow actions. Each object: { type: 1=assignment | 2=removal | 3=email | 4=webhook; " +
