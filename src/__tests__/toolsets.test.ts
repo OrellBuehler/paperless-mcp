@@ -74,6 +74,74 @@ describe("tool annotations", () => {
     expect(toolAnnotations.get_document.openWorldHint).toBe(false);
     expect(toolAnnotations.run_task.openWorldHint).toBe(true);
   });
+
+  it("treats manual workflow runs and version merges as destructive", async () => {
+    const { toolAnnotations } = await connect();
+    expect(toolAnnotations.run_workflow).toEqual({
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: false,
+      openWorldHint: true,
+    });
+    expect(toolAnnotations.merge_documents_as_versions.destructiveHint).toBe(true);
+    expect(toolAnnotations.merge_documents_as_versions.readOnlyHint).toBe(false);
+  });
+});
+
+describe("Paperless-ngx 3.5 tool metadata", () => {
+  it("hides the manual workflow and version merge tools in read-only mode", async () => {
+    const { names } = await connect({ PAPERLESS_READ_ONLY: "true" });
+    expect(names).not.toContain("run_workflow");
+    expect(names).not.toContain("merge_documents_as_versions");
+  });
+
+  it("registers run_workflow with the automation group and merge as versions with documents", async () => {
+    const { names } = await connect({ PAPERLESS_TOOLSETS: "automation" });
+    expect(names).toContain("run_workflow");
+    expect(names).not.toContain("merge_documents_as_versions");
+    const documents = await connect({ PAPERLESS_TOOLSETS: "documents" });
+    expect(documents.names).toContain("merge_documents_as_versions");
+    expect(documents.names).not.toContain("run_workflow");
+  });
+
+  it("documents the accepted bulk edit methods and the asynchronous behaviour", async () => {
+    const { tools } = await connect();
+    const bulk = tools.find((t) => t.name === "bulk_edit_documents")!;
+    for (const method of [
+      "modify_custom_fields",
+      "run_workflow",
+      "delete_pages",
+      "remove_password",
+    ]) {
+      expect(bulk.description, method).toContain(method);
+    }
+    expect(bulk.description).not.toContain("redo_ocr");
+    expect(bulk.description).not.toContain("convert");
+    expect(bulk.description).toContain("task_id");
+    expect(bulk.description).toContain("list_tasks");
+    const methodSchema = (bulk.inputSchema.properties as Record<string, { description?: string }>)
+      .method;
+    expect(methodSchema.description).toContain("modify_custom_fields");
+    expect(methodSchema.description).toContain("run_workflow");
+  });
+
+  it("exposes the new filters and fields in the input schemas", async () => {
+    const { tools } = await connect();
+    const props = (name: string) =>
+      tools.find((t) => t.name === name)!.inputSchema.properties as Record<string, any>;
+    expect(props("list_documents").has_duplicates.type).toBe("boolean");
+    expect(props("list_documents").custom_field_query.description).toContain("in 30 days");
+    expect(props("list_documents").query.description).toContain("barcodes.format:");
+    expect(props("create_saved_view").icon.enum).toContain("receipt");
+    expect(props("update_saved_view").icon.enum).toContain("funnel");
+    expect(props("add_document_note").format.enum).toEqual(["plain", "markdown"]);
+    expect(props("update_config").barcode_store_values).toBeDefined();
+    expect(props("list_workflows").trigger_type.type).toBe("number");
+    expect(props("create_workflow").triggers.description).toContain("5=manual");
+    expect(props("run_workflow").filter_documents.type).toBe("boolean");
+    expect(props("run_workflow").documents.minItems).toBe(1);
+    expect(props("merge_documents_as_versions").documents.minItems).toBe(2);
+  });
 });
 
 describe("server version", () => {

@@ -42,6 +42,13 @@ export function registerSystemTools(server: McpServer, client: PaperlessClient) 
       app_title: z.string().nullable().optional(),
       app_logo: z.string().nullable().optional(),
       barcodes_enabled: z.boolean().nullable().optional(),
+      barcode_store_values: z
+        .boolean()
+        .nullable()
+        .optional()
+        .describe(
+          "Store the content of every detected barcode with the document so it can be listed and searched. Paperless-ngx 3.3+",
+        ),
       barcode_enable_tiff_support: z.boolean().nullable().optional(),
       barcode_string: z.string().nullable().optional(),
       barcode_retain_split_pages: z.boolean().nullable().optional(),

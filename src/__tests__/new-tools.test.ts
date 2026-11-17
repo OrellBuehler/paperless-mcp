@@ -97,6 +97,7 @@ describe("new tool groups", () => {
       "test_storage_path",
       "rotate_documents",
       "merge_documents",
+      "merge_documents_as_versions",
       "edit_pdf_document",
       "remove_document_password",
       "reprocess_documents",
@@ -227,6 +228,60 @@ describe("new tool groups", () => {
     const { url, body } = lastCall(mockFetch);
     expect(url).toBe("http://localhost:8000/api/documents/merge/");
     expect(body).toEqual({ documents: [1, 2], delete_originals: true });
+  });
+
+  it("rotate_documents forwards excluded_documents for select-all requests", async () => {
+    await tools.get("rotate_documents")!({
+      all: true,
+      filters: { tags__id__all: [3] },
+      excluded_documents: [8, 9],
+      degrees: 180,
+    });
+    const { url, body } = lastCall(mockFetch);
+    expect(url).toBe("http://localhost:8000/api/documents/rotate/");
+    expect(body).toEqual({
+      all: true,
+      filters: { tags__id__all: [3] },
+      excluded_documents: [8, 9],
+      degrees: 180,
+    });
+  });
+
+  it("merge_documents_as_versions posts to the merge_as_versions endpoint", async () => {
+    mockFetch.mockResolvedValue(mockJson({ result: "OK", task_id: "t-9" }));
+    const res = await tools.get("merge_documents_as_versions")!({
+      documents: [10, 11],
+      root_document_id: 10,
+      version_label: "signed",
+    });
+    const { url, opts, body } = lastCall(mockFetch);
+    expect(url).toBe("http://localhost:8000/api/documents/merge_as_versions/");
+    expect(opts.method).toBe("POST");
+    expect(body).toEqual({ documents: [10, 11], root_document_id: 10, version_label: "signed" });
+    expect(JSON.parse(res.content[0].text)).toEqual({ result: "OK", task_id: "t-9" });
+  });
+
+  it("merge_documents_as_versions omits version_label when not given", async () => {
+    await tools.get("merge_documents_as_versions")!({
+      documents: [10, 11, 12],
+      root_document_id: 11,
+    });
+    expect(lastCall(mockFetch).body).toEqual({ documents: [10, 11, 12], root_document_id: 11 });
+  });
+
+  it("reprocess_documents forwards remote_ocr", async () => {
+    await tools.get("reprocess_documents")!({ documents: [1, 2], remote_ocr: true });
+    const { url, body } = lastCall(mockFetch);
+    expect(url).toBe("http://localhost:8000/api/documents/reprocess/");
+    expect(body).toEqual({ documents: [1, 2], remote_ocr: true });
+  });
+
+  it("update_config can enable barcode content storage", async () => {
+    await tools.get("update_config")!({ id: 1, barcode_store_values: true });
+    const { url, opts, body } = lastCall(mockFetch);
+    expect(url).toBe("http://localhost:8000/api/config/1/");
+    expect(opts.method).toBe("PATCH");
+    expect(body).toEqual({ barcode_store_values: true });
   });
 
   it("get_selection_data posts the document list", async () => {

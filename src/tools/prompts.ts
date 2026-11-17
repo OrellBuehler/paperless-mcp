@@ -111,7 +111,7 @@ Do not change anything without my confirmation.`);
 1. Read the paperless://tags resource (or call \`list_tags\`) to get every tag with its document count.
 2. Identify unused tags (document_count 0) and near-duplicates: case, spelling, singular/plural or language variants, and tags that duplicate a correspondent or document type.
 3. Propose a plan: for each merge, the tag to keep and the tags to retire; list unused tags as deletion candidates. Never touch inbox tags (is_inbox_tag).
-4. Wait for my explicit confirmation of each item. To merge, find the documents with \`list_documents\` and tags__id__all set to the old tag (it returns one page, so set page_size or page through all results), then call \`bulk_edit_documents\` with method modify_tags and parameters { add_tags: [keep], remove_tags: [old] }. Verify the old tag has no documents left.
+4. Wait for my explicit confirmation of each item. To merge, find the documents with \`list_documents\` and tags__id__all set to the old tag (it returns one page, so set page_size or page through all results), then call \`bulk_edit_documents\` with method modify_tags and parameters { add_tags: [keep], remove_tags: [old] }. On Paperless-ngx 3.5+ the change is applied in the background and the call returns a task_id: wait for that task to succeed with \`list_tasks\` before checking. Verify the old tag has no documents left.
 5. Before proposing to delete a tag, check what still references it: saved view filter rules (paperless://saved-views or \`list_saved_views\`), mail rules (\`list_mail_rules\`) and workflows (\`list_workflows\`). Report those references and update them first if I agree.
 6. Only call \`delete_tag\` for a tag whose deletion I confirmed. Never delete without confirmation.`),
   );
