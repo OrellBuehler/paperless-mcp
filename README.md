@@ -9,7 +9,7 @@
 
 Connect AI agents to [Paperless-ngx](https://docs.paperless-ngx.com/). This [Model Context Protocol](https://modelcontextprotocol.io/) server exposes the Paperless-ngx REST API as 115+ tools, so assistants like Claude can search, upload, tag, and organize your documents — with optional semantic search over your whole archive using local vector embeddings.
 
-Works with any MCP client: Claude Code, Claude Desktop, or your own agent.
+Works with any MCP client: Claude Code, Claude Desktop, [Ontheia](https://ontheia.ai), or your own agent.
 
 ## Highlights
 
