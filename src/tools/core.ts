@@ -354,7 +354,9 @@ export function registerCoreTools(server: McpServer, client: PaperlessClient) {
       tags: z.array(z.number()).optional().describe("Replace all tags with these IDs"),
       archive_serial_number: z.number().nullable().optional(),
       created: z.string().optional().describe("Created date (YYYY-MM-DD)"),
-      custom_fields: z.array(z.object({ field: z.number(), value: z.unknown() })).optional(),
+      custom_fields: z
+        .array(z.object({ field: z.number(), value: z.unknown().optional() }))
+        .optional(),
     },
     async ({ id, ...body }) => {
       try {
@@ -530,7 +532,10 @@ export function registerCoreTools(server: McpServer, client: PaperlessClient) {
         .describe(
           "Operation: set_correspondent, set_document_type, set_storage_path, add_tag, remove_tag, modify_tags, modify_custom_fields, set_permissions, delete, reprocess, run_workflow, rotate, merge, split, delete_pages, edit_pdf, remove_password",
         ),
-      parameters: z.record(z.unknown()).optional().describe("Operation-specific parameters"),
+      parameters: z
+        .record(z.string(), z.unknown())
+        .optional()
+        .describe("Operation-specific parameters"),
     },
     async ({ documents, method, parameters }) => {
       try {
@@ -1137,7 +1142,7 @@ export function registerCoreTools(server: McpServer, client: PaperlessClient) {
         ])
         .describe("Field data type"),
       extra_data: z
-        .record(z.unknown())
+        .record(z.string(), z.unknown())
         .optional()
         .describe(
           "For 'select': { select_options: [{ label }] }. For 'monetary': { default_currency }",
@@ -1163,7 +1168,7 @@ export function registerCoreTools(server: McpServer, client: PaperlessClient) {
     {
       id: z.number(),
       name: z.string().optional(),
-      extra_data: z.record(z.unknown()).optional(),
+      extra_data: z.record(z.string(), z.unknown()).optional(),
       owner: ownerField,
       set_permissions: setPermissionsField,
     },
