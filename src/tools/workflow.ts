@@ -135,7 +135,7 @@ export function registerWorkflowTools(server: McpServer, client: PaperlessClient
 
   server.tool(
     "bulk_tag_by_content",
-    "Search for documents matching a query and add a tag to all results",
+    "Search for documents matching a query and add a tag to all results. On Paperless-ngx 3.5+ the tagging is queued: the response contains a task_id (check it with list_tasks) and the tags appear once that task has finished.",
     {
       query: z.string().describe("Search query to find matching documents"),
       tag_id: z.number().describe("Tag ID to add to matching documents"),

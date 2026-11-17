@@ -500,3 +500,150 @@ describe("tax-report filters and helpers", () => {
     expect(res.isError).toBeFalsy();
   });
 });
+
+describe("Paperless-ngx 3.1 to 3.5 additions", () => {
+  let mockFetch: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    mockFetch = vi.fn();
+    vi.stubGlobal("fetch", mockFetch);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  function requestUrl(i: number) {
+    return new URL(mockFetch.mock.calls[i][0] as string);
+  }
+
+  function requestBody(i: number) {
+    return JSON.parse(mockFetch.mock.calls[i][1].body);
+  }
+
+  it("bulk_edit_documents POSTs the method and parameters and passes the task_id through", async () => {
+    mockFetch.mockResolvedValueOnce(mockJson({ result: "OK", task_id: "t-1" }));
+    const res = await tools.get("bulk_edit_documents")!({
+      documents: [1, 2],
+      method: "modify_custom_fields",
+      parameters: { add_custom_fields: { "3": "x" }, remove_custom_fields: [4] },
+    });
+    expect(mockFetch).toHaveBeenCalledWith(
+      "http://localhost:8000/api/documents/bulk_edit/",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          documents: [1, 2],
+          method: "modify_custom_fields",
+          parameters: { add_custom_fields: { "3": "x" }, remove_custom_fields: [4] },
+        }),
+      }),
+    );
+    expect(JSON.parse(res.content[0].text)).toEqual({ result: "OK", task_id: "t-1" });
+  });
+
+  it("bulk_edit_documents sends empty parameters when none are given", async () => {
+    mockFetch.mockResolvedValueOnce(mockJson({ result: "OK", task_id: "t-2" }));
+    await tools.get("bulk_edit_documents")!({ documents: [5], method: "delete" });
+    expect(requestBody(0)).toEqual({ documents: [5], method: "delete", parameters: {} });
+  });
+
+  it("bulk_tag_by_content returns the queued task from the bulk edit", async () => {
+    mockFetch
+      .mockResolvedValueOnce(
+        mockJson({ count: 1, next: null, results: [{ id: 7, title: "Invoice" }] }),
+      )
+      .mockResolvedValueOnce(mockJson({ result: "OK", task_id: "t-3" }));
+    const res = await tools.get("bulk_tag_by_content")!({ query: "invoice", tag_id: 9 });
+    expect(JSON.parse(res.content[0].text).result).toEqual({ result: "OK", task_id: "t-3" });
+  });
+
+  it("list_documents forwards has_duplicates", async () => {
+    mockFetch.mockResolvedValue(mockJson({ count: 0, next: null, results: [] }));
+    await tools.get("list_documents")!({ has_duplicates: true });
+    expect(requestUrl(0).searchParams.get("has_duplicates")).toBe("true");
+    await tools.get("list_documents")!({ has_duplicates: false });
+    expect(requestUrl(1).searchParams.get("has_duplicates")).toBe("false");
+  });
+
+  it("list_documents omits has_duplicates when not given", async () => {
+    mockFetch.mockResolvedValueOnce(mockJson({ count: 0, next: null, results: [] }));
+    await tools.get("list_documents")!({ is_in_inbox: true });
+    expect(requestUrl(0).searchParams.has("has_duplicates")).toBe(false);
+  });
+
+  it("list_documents forwards barcode queries", async () => {
+    mockFetch.mockResolvedValueOnce(mockJson({ count: 0, next: null, results: [] }));
+    await tools.get("list_documents")!({ query: "barcodes:DE89370400440532013000" });
+    expect(requestUrl(0).pathname).toBe("/api/documents/");
+    expect(requestUrl(0).searchParams.get("query")).toBe("barcodes:DE89370400440532013000");
+  });
+
+  it("list_documents forwards relative-date custom field queries", async () => {
+    mockFetch.mockResolvedValueOnce(mockJson({ count: 0, next: null, results: [] }));
+    const query = '["Ablauf", "range", ["today", "in 30 days"]]';
+    await tools.get("list_documents")!({ custom_field_query: query });
+    expect(requestUrl(0).searchParams.get("custom_field_query")).toBe(query);
+  });
+
+  it("get_document_metadata keeps the barcodes field", async () => {
+    const meta = {
+      original_filename: "scan.pdf",
+      barcodes: [{ page: 1, value: "DE89370400440532013000", format: "QRCode" }],
+    };
+    mockFetch.mockResolvedValueOnce(mockJson(meta));
+    const res = await tools.get("get_document_metadata")!({ id: 3 });
+    expect(mockFetch.mock.calls[0][0]).toBe("http://localhost:8000/api/documents/3/metadata/");
+    expect(JSON.parse(res.content[0].text)).toEqual(meta);
+  });
+
+  it("list_documents strips only content and keeps duplicate and barcode fields", async () => {
+    const doc = {
+      id: 1,
+      content: "OCR",
+      duplicate_documents: [{ id: 2, title: "Copy", deleted_at: null }],
+      barcodes: [{ page: 1, value: "x", format: "QRCode" }],
+    };
+    mockFetch.mockResolvedValue(mockJson({ count: 1, next: null, results: [doc] }));
+    const res = await tools.get("list_documents")!({ query: "x" });
+    expect(JSON.parse(res.content[0].text).results[0]).toEqual({
+      id: 1,
+      duplicate_documents: doc.duplicate_documents,
+      barcodes: doc.barcodes,
+    });
+  });
+
+  it("add_document_note sends only the note by default", async () => {
+    mockFetch.mockResolvedValueOnce(mockJson([]));
+    await tools.get("add_document_note")!({ id: 4, note: "plain" });
+    expect(mockFetch.mock.calls[0][0]).toBe("http://localhost:8000/api/documents/4/notes/");
+    expect(requestBody(0)).toEqual({ note: "plain" });
+  });
+
+  it("add_document_note sends the note format when given", async () => {
+    mockFetch.mockResolvedValueOnce(mockJson([]));
+    await tools.get("add_document_note")!({ id: 4, note: "**bold**", format: "markdown" });
+    expect(requestBody(0)).toEqual({ note: "**bold**", format: "markdown" });
+  });
+
+  it("create_saved_view and update_saved_view send the icon", async () => {
+    mockFetch.mockResolvedValue(mockJson({ id: 12 }));
+    await tools.get("create_saved_view")!({
+      name: "Invoices",
+      filter_rules: [{ rule_type: 50, value: "true" }],
+      icon: "receipt",
+      show_on_dashboard: false,
+      show_in_sidebar: true,
+    });
+    expect(requestBody(0)).toEqual({
+      name: "Invoices",
+      filter_rules: [{ rule_type: 50, value: "true" }],
+      icon: "receipt",
+      show_on_dashboard: false,
+      show_in_sidebar: true,
+    });
+    await tools.get("update_saved_view")!({ id: 12, icon: "bank" });
+    expect(mockFetch.mock.calls[1][0]).toBe("http://localhost:8000/api/saved_views/12/");
+    expect(requestBody(1)).toEqual({ icon: "bank" });
+  });
+});

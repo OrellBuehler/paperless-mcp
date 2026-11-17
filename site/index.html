@@ -588,10 +588,12 @@
                   <circle cx="10" cy="17" r="1.5" />
                 </svg>
               </div>
-              <h3>Paperless-ngx 3.0 ready</h3>
+              <h3>Paperless-ngx 3.5 ready</h3>
               <p>
-                Document versions, PDF editing, share bundles and task management. API v9 is pinned
-                by default so 2.x and 3.x behave the same; v10 is fully supported when you opt in.
+                Document versions, PDF editing, manual workflow runs, barcode contents, share
+                bundles and task management, including the background bulk edits of 3.5. API v9 is
+                pinned by default so 2.x and 3.x behave the same; v10 is fully supported when you
+                opt in.
               </p>
             </div>
             <div class="card">
@@ -789,7 +791,7 @@
               </ul>
             </details>
             <details>
-              <summary>Versions and PDF editing <span class="count">9</span></summary>
+              <summary>Versions and PDF editing <span class="count">10</span></summary>
               <ul>
                 <li><code>upload_document_version</code><span class="tag">3.0+</span></li>
                 <li><code>set_document_version_label</code><span class="tag">3.0+</span></li>
@@ -797,13 +799,14 @@
                 <li><code>get_document_root</code><span class="tag">3.0+</span></li>
                 <li><code>rotate_documents</code><span class="tag">3.0+</span></li>
                 <li><code>merge_documents</code><span class="tag">3.0+</span></li>
+                <li><code>merge_documents_as_versions</code><span class="tag">3.1+</span></li>
                 <li><code>edit_pdf_document</code><span class="tag">3.0+</span></li>
                 <li><code>remove_document_password</code><span class="tag">3.0+</span></li>
                 <li><code>reprocess_documents</code><span class="tag">3.0+</span></li>
               </ul>
             </details>
             <details>
-              <summary>Users, groups and workflows <span class="count">12</span></summary>
+              <summary>Users, groups and workflows <span class="count">13</span></summary>
               <ul>
                 <li><code>list_users</code></li>
                 <li><code>get_user</code></li>
@@ -817,6 +820,7 @@
                 <li><code>get_workflow</code></li>
                 <li><code>create_workflow</code></li>
                 <li><code>update_workflow</code></li>
+                <li><code>run_workflow</code><span class="tag">3.5+</span></li>
               </ul>
             </details>
             <details>

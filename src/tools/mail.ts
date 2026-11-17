@@ -13,7 +13,10 @@ const permissionsSchema = z
   .describe("Sharing permissions: { view: { users, groups }, change: { users, groups } }");
 
 const accountRest = {
-  imap_port: z.number().optional(),
+  imap_port: z
+    .number()
+    .optional()
+    .describe("Required when creating an account on Paperless-ngx 3.1.1+"),
   imap_security: z.number().optional().describe("1=no encryption, 2=SSL, 3=STARTTLS"),
   character_set: z.string().optional(),
   is_token: z.boolean().optional().describe("Treat password as an access token"),

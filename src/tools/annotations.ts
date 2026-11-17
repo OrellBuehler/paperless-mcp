@@ -96,6 +96,7 @@ export const toolAnnotations: Record<string, ToolAnnotations> = {
   get_workflow: read,
   create_workflow: create,
   update_workflow: overwrite,
+  run_workflow: { ...destructive, openWorldHint: true },
 
   get_document_history: read,
   get_document_thumbnail: read,
@@ -111,6 +112,7 @@ export const toolAnnotations: Record<string, ToolAnnotations> = {
   test_storage_path: read,
   rotate_documents: destructive,
   merge_documents: destructive,
+  merge_documents_as_versions: destructive,
   edit_pdf_document: destructive,
   remove_document_password: destructive,
   reprocess_documents: overwrite,

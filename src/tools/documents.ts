@@ -16,7 +16,14 @@ const docSelection = {
     .record(z.string(), z.unknown())
     .optional()
     .describe("Filter object used when `all` is true, e.g. { tags__id__all: [3] }"),
+  excluded_documents: z
+    .array(z.number())
+    .optional()
+    .describe("Document IDs to leave out when `all` is true. Paperless-ngx 3.2+"),
 };
+
+const queued =
+  " On Paperless-ngx 3.5+ the request is queued and the response contains a task_id (check it with list_tasks); a finished task only means any resulting consumption or reprocessing was scheduled.";
 
 export function registerDocumentTools(server: McpServer, client: PaperlessClient) {
   server.tool(
@@ -288,7 +295,8 @@ export function registerDocumentTools(server: McpServer, client: PaperlessClient
 
   server.tool(
     "rotate_documents",
-    "Rotate documents by a multiple of 90 degrees. Requires Paperless-ngx 3.0+ (use bulk_edit_documents on older servers).",
+    "Rotate documents by a multiple of 90 degrees. Requires Paperless-ngx 3.0+ (use bulk_edit_documents on older servers)." +
+      queued,
     {
       ...docSelection,
       degrees: z.number().describe("Rotation in degrees; must be a multiple of 90"),
@@ -309,7 +317,8 @@ export function registerDocumentTools(server: McpServer, client: PaperlessClient
 
   server.tool(
     "merge_documents",
-    "Merge several documents into one new document. Requires Paperless-ngx 3.0+ (use bulk_edit_documents on older servers).",
+    "Merge several documents into one new document. Requires Paperless-ngx 3.0+ (use bulk_edit_documents on older servers)." +
+      queued,
     {
       documents: z.array(z.number()).describe("Document IDs, merged in this order"),
       metadata_document_id: z
@@ -337,8 +346,37 @@ export function registerDocumentTools(server: McpServer, client: PaperlessClient
   );
 
   server.tool(
+    "merge_documents_as_versions",
+    "Merge existing documents into one as file versions of a chosen root document. The other documents stop being separate documents: they become versions of the root, which keeps its metadata, and they give up their archive serial number (the root takes one if it has none). Only top-level documents can be merged, and documents that have versions of their own cannot be merged into another. You must own the documents and have permission to delete documents. Requires Paperless-ngx 3.1+. On 3.5+ the request is queued and the response contains a task_id (check it with list_tasks).",
+    {
+      documents: z.array(z.number()).min(2).describe("Document IDs to merge, including the root"),
+      root_document_id: z
+        .number()
+        .describe("The document that keeps its identity; one of `documents`"),
+      version_label: z
+        .string()
+        .optional()
+        .describe(
+          "Label for the new version (max 64 characters); only allowed when merging a single other document, i.e. `documents` has two entries",
+        ),
+    },
+    async (body) => {
+      try {
+        return ok(
+          await client.fetch("/api/documents/merge_as_versions/", {
+            method: "POST",
+            body: JSON.stringify(body),
+          }),
+        );
+      } catch (e) {
+        return err(e);
+      }
+    },
+  );
+
+  server.tool(
     "edit_pdf_document",
-    "Reorder, rotate, split or delete pages of a document. Requires Paperless-ngx 3.0+.",
+    "Reorder, rotate, split or delete pages of a document. Requires Paperless-ngx 3.0+." + queued,
     {
       documents: z.array(z.number()).describe("Document IDs (normally exactly one)"),
       operations: z
@@ -369,7 +407,7 @@ export function registerDocumentTools(server: McpServer, client: PaperlessClient
 
   server.tool(
     "remove_document_password",
-    "Strip password protection from encrypted PDFs. Requires Paperless-ngx 3.0+.",
+    "Strip password protection from encrypted PDFs. Requires Paperless-ngx 3.0+." + queued,
     {
       documents: z.array(z.number()).describe("Document IDs"),
       password: z.string().describe("Password that unlocks the PDFs"),
@@ -393,8 +431,17 @@ export function registerDocumentTools(server: McpServer, client: PaperlessClient
 
   server.tool(
     "reprocess_documents",
-    "Re-run OCR and archive generation for documents. Requires Paperless-ngx 3.0+ (use bulk_edit_documents on older servers).",
-    docSelection,
+    "Re-run OCR and archive generation for documents. Requires Paperless-ngx 3.0+ (use bulk_edit_documents on older servers)." +
+      queued,
+    {
+      ...docSelection,
+      remote_ocr: z
+        .boolean()
+        .optional()
+        .describe(
+          "Send the documents to the configured remote OCR engine instead of OCRing locally (default false). Paperless-ngx 3.1+",
+        ),
+    },
     async (body) => {
       try {
         return ok(
