@@ -20,6 +20,9 @@ ENV NODE_ENV=production \
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 COPY package.json ./
+COPY docker-entrypoint.sh /usr/local/bin/
+RUN mkdir /data && chown node:node /data
 VOLUME ["/data"]
 EXPOSE 3001
+ENTRYPOINT ["docker-entrypoint.sh"]
 CMD ["node", "dist/index.js"]

@@ -206,7 +206,7 @@ Set `PAPERLESS_API_VERSION=10` to opt into v10, or `PAPERLESS_API_VERSION=none` 
 | `PAPERLESS_READ_ONLY`          | No              | Set to `true` to register only read-only tools (default: off)                                                                                                     |
 | `PAPERLESS_DISABLED_TOOLS`     | No              | Comma-separated tool names to skip                                                                                                                                |
 | `MCP_ALLOWED_ORIGINS`          | No              | Comma-separated `Origin` allowlist for browser clients (http mode). Empty (default) blocks all cross-origin browser requests; use `*` to allow any                |
-| `MCP_ALLOWED_HOSTS`            | No              | Comma-separated `Host` allowlist for DNS-rebinding protection (http mode). Empty (default) disables host validation                                               |
+| `MCP_ALLOWED_HOSTS`            | No              | Comma-separated `Host` allowlist for DNS-rebinding protection (http mode). Empty (default) disables host validation; the server warns about that at startup       |
 | `MCP_OAUTH_ISSUER`             | No              | OIDC issuer URL of your identity provider. Setting it enables [OAuth mode](#oauth-optional) (http mode only)                                                      |
 | `MCP_OAUTH_CLIENT_ID`          | With OAuth      | Client ID of the OIDC client Paperless uses                                                                                                                       |
 | `MCP_OAUTH_CLIENT_SECRET`      | No              | Client secret of that client (omit for public clients)                                                                                                            |
@@ -222,6 +222,7 @@ Set `PAPERLESS_API_VERSION=10` to opt into v10, or `PAPERLESS_API_VERSION=none` 
 | `OLLAMA_URL`                   | If using Ollama | Ollama server URL (default: `http://localhost:11434`)                                                                                                             |
 | `EMBEDDING_MODEL`              | No              | Model name (defaults per provider)                                                                                                                                |
 | `EMBEDDING_DIMENSIONS`         | No              | Vector dimensions (defaults per provider)                                                                                                                         |
+| `EMBEDDING_TIMEOUT_MS`         | No              | Timeout for each request to the embedding provider in milliseconds (default: `60000`; `0` disables)                                                               |
 | `PAPERLESS_MCP_DATA`           | No              | Directory for the vector DB and OAuth state (default: `~/.paperless-mcp`)                                                                                         |
 
 ## Transports
@@ -249,7 +250,20 @@ Clients connect to `http://<host>:3001/mcp` and authenticate with **their own**
 Paperless API token via an `Authorization: Bearer <token>` header (or
 `X-Paperless-Token`). Every Paperless call is made with that token, so each user
 only sees the documents their account permits. The token must be sent on every
-request; a session only accepts the token it was initialized with.
+request; a session only accepts the token it was initialized with. A new
+session is only opened once Paperless has accepted the token.
+
+Because the server's disk and network are shared by every user, HTTP mode is
+restricted compared to stdio:
+
+- The tools that read or write local files (`upload_document`,
+  `upload_document_version`, `bulk_download_documents`, `extract_document_pages`)
+  are not registered. Use `upload_from_url` to add documents.
+- `upload_from_url` refuses URLs that point at private, loopback or link-local
+  addresses, so it cannot be used to reach services on the server's network.
+- Request bodies are limited to 4 MB. At most 1000 sessions are kept; idle ones
+  expire after 24 hours and the least recently used is dropped when the limit is
+  reached (clients re-initialize transparently).
 
 `PAPERLESS_TOKEN` is the admin/indexer token: it builds the shared semantic-search
 index, and the `sync_embeddings` tool is only available to a session using the
@@ -405,6 +419,10 @@ paperless-mcp:
     EMBEDDING_PROVIDER: openai
     OPENAI_API_KEY: <key>
 ```
+
+The container starts as root only to take ownership of `/data`, then runs the
+server as the unprivileged `node` user (uid 1000). Starting it with `user:` set
+to another non-root uid also works, as long as that uid can write to `/data`.
 
 The image already defaults to `MCP_TRANSPORT=http`, `PORT=3001`, and
 `PAPERLESS_MCP_DATA=/data`, so the only variables you must set are
