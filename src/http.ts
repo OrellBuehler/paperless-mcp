@@ -4,6 +4,28 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { config, clientFor } from "./config.js";
 import { createServer } from "./server.js";
 import type { Credential, OAuth } from "./oauth.js";
+import type { PaperlessClient } from "./paperless/client.js";
+
+export interface HttpLimits {
+  maxBodyBytes: number;
+  maxSessions: number;
+  sessionIdleMs: number;
+}
+
+export const DEFAULT_HTTP_LIMITS: HttpLimits = {
+  maxBodyBytes: 4 * 1024 * 1024,
+  maxSessions: 1000,
+  sessionIdleMs: 24 * 60 * 60 * 1000,
+};
+
+class HttpError extends Error {
+  constructor(
+    readonly status: number,
+    message: string,
+  ) {
+    super(message);
+  }
+}
 
 type Headers = Record<string, string | string[] | undefined>;
 
@@ -59,15 +81,58 @@ function setCors(res: ServerResponse, origin: string | undefined, oauth: boolean
   );
 }
 
-async function readBody(req: IncomingMessage): Promise<unknown> {
+async function readBody(req: IncomingMessage, maxBytes: number): Promise<unknown> {
+  const tooLarge = () => new HttpError(413, `Request body exceeds ${maxBytes} bytes`);
+  if (Number(req.headers["content-length"]) > maxBytes) throw tooLarge();
   const chunks: Buffer[] = [];
-  for await (const c of req) chunks.push(c as Buffer);
+  let size = 0;
+  for await (const c of req) {
+    size += (c as Buffer).length;
+    if (size > maxBytes) throw tooLarge();
+    chunks.push(c as Buffer);
+  }
   if (chunks.length === 0) return undefined;
-  return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+  try {
+    return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+  } catch {
+    throw new HttpError(400, "Request body is not valid JSON");
+  }
 }
 
-export function createHttpHandler(oauth: OAuth | null = null) {
-  const transports = new Map<string, { transport: StreamableHTTPServerTransport; key: string }>();
+async function verifyToken(client: PaperlessClient) {
+  try {
+    await client.fetch("/api/profile/");
+  } catch (e) {
+    if (e instanceof Error && /^(401|403) /.test(e.message))
+      throw new HttpError(401, "Paperless rejected the token");
+    console.error(
+      "paperless-mcp: could not verify a token with Paperless:",
+      e instanceof Error ? e.message : e,
+    );
+    throw new HttpError(502, "Could not reach Paperless to verify the token");
+  }
+}
+
+export function createHttpHandler(
+  oauth: OAuth | null = null,
+  limits: HttpLimits = DEFAULT_HTTP_LIMITS,
+) {
+  type Session = { transport: StreamableHTTPServerTransport; key: string; seen: number };
+  const transports = new Map<string, Session>();
+
+  const drop = (sid: string, session: Session) => {
+    transports.delete(sid);
+    session.transport.close().catch(() => {});
+  };
+
+  const makeRoom = () => {
+    const now = Date.now();
+    for (const [sid, session] of transports) {
+      if (now - session.seen > limits.sessionIdleMs || transports.size >= limits.maxSessions)
+        drop(sid, session);
+      else break;
+    }
+  };
 
   return async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     const origin = req.headers.origin;
@@ -115,7 +180,10 @@ export function createHttpHandler(oauth: OAuth | null = null) {
           res.end(JSON.stringify({ error: "Unknown or expired session" }));
           return;
         }
-        const body = await readBody(req);
+        existing.seen = Date.now();
+        transports.delete(sessionId);
+        transports.set(sessionId, existing);
+        const body = await readBody(req, limits.maxBodyBytes);
         await existing.transport.handleRequest(req, res, body);
         return;
       }
@@ -129,10 +197,19 @@ export function createHttpHandler(oauth: OAuth | null = null) {
         return;
       }
 
+      const client = clientFor(credential.token);
+      if (oauth && credential.oauth) {
+        client.onUnauthorized = () => oauth.revokePaperlessToken(credential.token);
+      } else {
+        await verifyToken(client);
+      }
+      const body = await readBody(req, limits.maxBodyBytes);
+
       const transport = new StreamableHTTPServerTransport({
         sessionIdGenerator: () => randomUUID(),
         onsessioninitialized: (sid: string) => {
-          transports.set(sid, { transport, key: credential.key });
+          makeRoom();
+          transports.set(sid, { transport, key: credential.key, seen: Date.now() });
         },
         onsessionclosed: (sid: string) => {
           transports.delete(sid);
@@ -142,19 +219,21 @@ export function createHttpHandler(oauth: OAuth | null = null) {
         if (transport.sessionId) transports.delete(transport.sessionId);
       };
 
-      const client = clientFor(credential.token);
-      if (oauth && credential.oauth) {
-        client.onUnauthorized = () => oauth.revokePaperlessToken(credential.token);
-      }
       const server = await createServer(client);
       await server.connect(transport);
 
-      const body = await readBody(req);
       await transport.handleRequest(req, res, body);
     } catch (e) {
+      if (!(e instanceof HttpError)) console.error("paperless-mcp: request failed:", e);
       if (!res.headersSent) {
-        res.writeHead(500, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ error: String(e) }));
+        const status = e instanceof HttpError ? e.status : 500;
+        res.writeHead(status, {
+          "Content-Type": "application/json",
+          ...(status === 413 ? { Connection: "close" } : {}),
+        });
+        res.end(
+          JSON.stringify({ error: e instanceof HttpError ? e.message : "Internal server error" }),
+        );
       }
     }
   };
@@ -183,6 +262,12 @@ export async function startHttpServer(): Promise<void> {
       console.error(e instanceof Error ? e.message : String(e));
       process.exit(1);
     }
+  }
+
+  if (config.allowedHosts.length === 0) {
+    console.error(
+      "Warning: MCP_ALLOWED_HOSTS is not set, so any Host header is accepted. Set it to the hostname(s) clients use to enable DNS-rebinding protection.",
+    );
   }
 
   const httpServer = createHttpServer(createHttpHandler(oauth));

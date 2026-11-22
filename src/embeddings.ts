@@ -15,6 +15,27 @@ if (isNaN(EMBEDDING_DIMENSIONS) || EMBEDDING_DIMENSIONS <= 0) {
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const OLLAMA_URL = (process.env.OLLAMA_URL || "http://localhost:11434").replace(/\/+$/, "");
 
+const timeoutRaw = (process.env.EMBEDDING_TIMEOUT_MS ?? "").trim();
+const EMBEDDING_TIMEOUT_MS = /^\d+$/.test(timeoutRaw) ? Number(timeoutRaw) : 60000;
+
+function timeoutSignal(): AbortSignal | undefined {
+  return EMBEDDING_TIMEOUT_MS > 0 && EMBEDDING_TIMEOUT_MS <= 2147483647
+    ? AbortSignal.timeout(EMBEDDING_TIMEOUT_MS)
+    : undefined;
+}
+
+async function post(name: string, url: string, init: RequestInit): Promise<Response> {
+  try {
+    return await fetch(url, { ...init, method: "POST", signal: timeoutSignal() });
+  } catch (e) {
+    if (e instanceof Error && e.name === "TimeoutError")
+      throw new Error(`${name} embedding request timed out after ${EMBEDDING_TIMEOUT_MS}ms`, {
+        cause: e,
+      });
+    throw e;
+  }
+}
+
 export function getEmbeddingDimensions(): number {
   return EMBEDDING_DIMENSIONS;
 }
@@ -25,8 +46,7 @@ export function getProviderInfo() {
 
 async function embedOpenAI(texts: string[]): Promise<number[][]> {
   if (!OPENAI_API_KEY) throw new Error("OPENAI_API_KEY is required when using OpenAI embeddings");
-  const res = await fetch("https://api.openai.com/v1/embeddings", {
-    method: "POST",
+  const res = await post("OpenAI", "https://api.openai.com/v1/embeddings", {
     headers: {
       Authorization: `Bearer ${OPENAI_API_KEY}`,
       "Content-Type": "application/json",
@@ -46,8 +66,7 @@ async function embedOpenAI(texts: string[]): Promise<number[][]> {
 }
 
 async function embedOllama(texts: string[]): Promise<number[][]> {
-  const res = await fetch(`${OLLAMA_URL}/api/embed`, {
-    method: "POST",
+  const res = await post("Ollama", `${OLLAMA_URL}/api/embed`, {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ model: EMBEDDING_MODEL, input: texts }),
   });

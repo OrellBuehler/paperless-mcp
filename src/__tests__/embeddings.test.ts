@@ -35,6 +35,21 @@ describe("embeddings with openai provider", () => {
     expect(result).toEqual([]);
   });
 
+  it("aborts a hung request after EMBEDDING_TIMEOUT_MS", async () => {
+    vi.stubEnv("EMBEDDING_TIMEOUT_MS", "20");
+    vi.stubGlobal(
+      "fetch",
+      (_url: string, init: RequestInit) =>
+        new Promise((_resolve, reject) =>
+          init.signal!.addEventListener("abort", () => reject(init.signal!.reason)),
+        ),
+    );
+    const { embed } = await import("../embeddings.js");
+    await expect(embed(["x"])).rejects.toThrow("OpenAI embedding request timed out after 20ms");
+    vi.unstubAllGlobals();
+    vi.stubEnv("EMBEDDING_TIMEOUT_MS", "");
+  });
+
   it("calls openai embedding API correctly", async () => {
     const mockFetch = vi.fn().mockResolvedValueOnce({
       ok: true,

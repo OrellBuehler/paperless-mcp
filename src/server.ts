@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { PaperlessClient } from "./paperless/client.js";
 import { config, adminClient, type Toolset } from "./config.js";
-import { toolAnnotations } from "./tools/annotations.js";
+import { toolAnnotations, localFileTools } from "./tools/annotations.js";
 import { registerCoreTools } from "./tools/core.js";
 import { registerWorkflowTools } from "./tools/workflow.js";
 import { registerHelperTools } from "./tools/helpers.js";
@@ -39,6 +39,7 @@ function toolFilter(server: McpServer): McpServer {
     const annotations = Object.hasOwn(toolAnnotations, name) ? toolAnnotations[name] : undefined;
     if (config.disabledTools.includes(name)) return;
     if (config.readOnly && !annotations?.readOnlyHint) return;
+    if (config.transport === "http" && localFileTools.includes(name)) return;
     const cb = rest.pop();
     return register(name, ...rest, ...(annotations ? [annotations] : []), cb);
   };

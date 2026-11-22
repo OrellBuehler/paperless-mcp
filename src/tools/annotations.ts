@@ -160,3 +160,10 @@ export const toolAnnotations: Record<string, ToolAnnotations> = {
   sync_embeddings: { ...overwrite, openWorldHint: true },
   embedding_status: read,
 };
+
+export const localFileTools = [
+  "upload_document",
+  "upload_document_version",
+  "bulk_download_documents",
+  "extract_document_pages",
+];

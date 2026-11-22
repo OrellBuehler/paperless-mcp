@@ -1,4 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 
 vi.stubEnv("PAPERLESS_URL", "https://p.example.com");
 vi.stubEnv("PAPERLESS_TOKEN", "admin-tok");
@@ -69,20 +71,17 @@ describe("helper tools use the injected client", () => {
       uploaded = true;
       return { ok: true, json: async () => ({ task: "t" }), headers: new Map() };
     };
-    const realFetch = global.fetch;
-    global.fetch = (async () => ({
-      ok: true,
-      status: 200,
-      headers: new Map([["content-length", "10"]]),
-      blob: async () => new Blob(["data"]),
-    })) as unknown as typeof fetch;
+    const origin = createServer((_req, res) => res.end("data"));
+    await new Promise<void>((r) => origin.listen(0, "127.0.0.1", r));
     try {
       const t = collect(registerHelperTools, c);
-      const res = await t.get("upload_from_url")!({ url: "https://example.com/file.pdf" });
+      const res = await t.get("upload_from_url")!({
+        url: `http://127.0.0.1:${(origin.address() as AddressInfo).port}/file.pdf`,
+      });
       expect(uploaded).toBe(true);
       expect(res.isError).toBeFalsy();
     } finally {
-      global.fetch = realFetch;
+      origin.close();
     }
   });
 });

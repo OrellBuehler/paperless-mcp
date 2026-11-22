@@ -47,6 +47,40 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+describe("local file tools", () => {
+  const fileTools = [
+    "bulk_download_documents",
+    "extract_document_pages",
+    "upload_document",
+    "upload_document_version",
+  ];
+
+  it("are registered over stdio", async () => {
+    const { names } = await connect();
+    expect(names).toEqual(expect.arrayContaining(fileTools));
+  });
+
+  it("are not registered over the http transport", async () => {
+    const { names, toolAnnotations } = await connect({ MCP_TRANSPORT: "http" });
+    expect(names.filter((n) => fileTools.includes(n))).toEqual([]);
+    expect(names).toContain("upload_from_url");
+    expect(names.length).toBe(Object.keys(toolAnnotations).length - fileTools.length);
+  });
+
+  it("covers every tool that reads or writes the local disk", async () => {
+    const { localFileTools } = await import("../tools/annotations.js");
+    expect([...localFileTools].sort()).toEqual(fileTools);
+    for (const file of ["core", "documents", "helpers", "workflow", "system", "sharing", "mail"]) {
+      const source = readFileSync(new URL(`../tools/${file}.ts`, import.meta.url), "utf8");
+      const blocks = source.split("server.tool(").slice(1);
+      for (const block of blocks) {
+        const name = block.match(/"([a-z_]+)"/)![1];
+        if (/\b(readFile|writeFile)\(/.test(block)) expect(fileTools, name).toContain(name);
+      }
+    }
+  });
+});
+
 describe("tool annotations", () => {
   it("classifies every registered tool and has no stale entries", async () => {
     const { tools, names, toolAnnotations } = await connect();

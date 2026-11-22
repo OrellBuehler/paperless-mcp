@@ -56,6 +56,20 @@ function jwt(payload: Record<string, unknown>) {
   return `${part({ alg: "RS256" })}.${part(payload)}.sig`;
 }
 
+function stubPaperless(profile: () => Response | Promise<Response> = () => new Response("{}")) {
+  vi.stubGlobal("fetch", async (input: string | URL, init?: RequestInit) =>
+    String(input) === "https://p.example.com/api/profile/" ? profile() : realFetch(input, init),
+  );
+}
+
+function initialize(base: string, token: string, extra: Record<string, string> = {}) {
+  return realFetch(`${base}/mcp`, {
+    method: "POST",
+    headers: { ...MCP_HEADERS, Authorization: `Bearer ${token}`, ...extra },
+    body: INIT,
+  });
+}
+
 const challengeFor = (v: string) => createHash("sha256").update(v).digest("base64url");
 
 describe("http transport defaults (OAuth disabled)", () => {
@@ -64,8 +78,12 @@ describe("http transport defaults (OAuth disabled)", () => {
 
   beforeAll(async () => {
     ({ server, base } = await listen(createHttpHandler()));
+    stubPaperless();
   });
-  afterAll(() => close(server));
+  afterAll(async () => {
+    vi.unstubAllGlobals();
+    await close(server);
+  });
 
   it("leaves OAuth disabled without MCP_OAUTH_ISSUER", () => {
     expect(config.oauthEnabled).toBe(false);
@@ -133,6 +151,99 @@ describe("http transport defaults (OAuth disabled)", () => {
       body: INIT,
     });
     expect(x.status).toBe(200);
+  });
+});
+
+describe("http transport limits", () => {
+  let server: Server;
+  let base: string;
+
+  async function start(limits = {}) {
+    ({ server, base } = await listen(
+      createHttpHandler(null, {
+        maxBodyBytes: 4096,
+        maxSessions: 2,
+        sessionIdleMs: 60_000,
+        ...limits,
+      }),
+    ));
+  }
+
+  afterEach(async () => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+    await close(server);
+  });
+
+  async function session(token: string) {
+    const r = await initialize(base, token);
+    expect(r.status).toBe(200);
+    await r.text();
+    return r.headers.get("mcp-session-id")!;
+  }
+
+  async function alive(sid: string, token: string) {
+    const r = await initialize(base, token, { "mcp-session-id": sid });
+    await r.text();
+    return r.status !== 404;
+  }
+
+  it("rejects a token Paperless does not accept, without opening a session", async () => {
+    await start();
+    stubPaperless(() => new Response('{"detail":"Invalid token."}', { status: 401 }));
+    const r = await initialize(base, "bogus");
+    expect(r.status).toBe(401);
+    expect(r.headers.get("mcp-session-id")).toBeNull();
+    expect(await r.json()).toEqual({ error: "Paperless rejected the token" });
+  });
+
+  it("answers 502 without leaking details when Paperless cannot be reached", async () => {
+    await start();
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    stubPaperless(() => new Response("upstream secret", { status: 500 }));
+    const r = await initialize(base, "tok");
+    expect(r.status).toBe(502);
+    expect(await r.text()).not.toContain("secret");
+    expect(logged).toHaveBeenCalled();
+  });
+
+  it("rejects oversized and malformed bodies", async () => {
+    await start();
+    stubPaperless();
+    const big = await realFetch(`${base}/mcp`, {
+      method: "POST",
+      headers: { ...MCP_HEADERS, Authorization: "Bearer tok" },
+      body: JSON.stringify({ pad: "x".repeat(5000) }),
+    });
+    expect(big.status).toBe(413);
+    const bad = await realFetch(`${base}/mcp`, {
+      method: "POST",
+      headers: { ...MCP_HEADERS, Authorization: "Bearer tok" },
+      body: "{not json",
+    });
+    expect(bad.status).toBe(400);
+    expect(await bad.json()).toEqual({ error: "Request body is not valid JSON" });
+  });
+
+  it("evicts the least recently used session once the cap is reached", async () => {
+    await start();
+    stubPaperless();
+    const a = await session("a");
+    const b = await session("b");
+    expect(await alive(a, "a")).toBe(true);
+    const c = await session("c");
+    expect(await alive(b, "b")).toBe(false);
+    expect(await alive(a, "a")).toBe(true);
+    expect(await alive(c, "c")).toBe(true);
+  });
+
+  it("drops idle sessions when a new one is opened", async () => {
+    await start({ maxSessions: 10, sessionIdleMs: 30 });
+    stubPaperless();
+    const a = await session("a");
+    await new Promise((r) => setTimeout(r, 60));
+    await session("b");
+    expect(await alive(a, "a")).toBe(false);
   });
 });
 
@@ -252,6 +363,7 @@ describe("OAuth mode", () => {
     vi.stubGlobal("fetch", async (input: string | URL, init?: RequestInit) => {
       const url = String(input);
       if (url.startsWith(base)) return realFetch(input, init);
+      if (url === "https://p.example.com/api/profile/") return new Response("{}");
       calls.push({ url, init });
       if (url === "https://idp.example.com/.well-known/openid-configuration")
         return new Response(

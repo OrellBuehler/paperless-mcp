@@ -3,6 +3,8 @@ import { z } from "zod";
 import { buildQS, ok, err } from "../paperless/format.js";
 import type { PaginatedResponse } from "../paperless/format.js";
 import type { PaperlessClient } from "../paperless/client.js";
+import { config } from "../config.js";
+import { downloadUrl } from "../download.js";
 
 interface Correspondent {
   id: number;
@@ -267,7 +269,7 @@ export function registerHelperTools(server: McpServer, client: PaperlessClient) 
 
   server.tool(
     "upload_from_url",
-    "Download a file from a URL and upload it to Paperless-ngx",
+    "Download a file from a URL (max 100 MB, redirects are not followed) and upload it to Paperless-ngx. Over the HTTP transport, private and local addresses are refused.",
     {
       url: z.string().describe("URL to download the file from"),
       title: z.string().optional(),
@@ -284,23 +286,20 @@ export function registerHelperTools(server: McpServer, client: PaperlessClient) 
             `Unsupported URL scheme: ${parsed.protocol}. Only http and https are allowed.`,
           );
         }
-        const MAX_DOWNLOAD_SIZE = 100 * 1024 * 1024; // 100 MB
-        const fileRes = await fetch(url, { redirect: "error" });
-        if (!fileRes.ok)
-          throw new Error(`Failed to download: ${fileRes.status} ${fileRes.statusText}`);
-        const contentLength = parseInt(fileRes.headers.get("content-length") || "0", 10);
-        if (contentLength > MAX_DOWNLOAD_SIZE) {
-          throw new Error(`File too large: ${contentLength} bytes (max ${MAX_DOWNLOAD_SIZE})`);
-        }
+        const { data, headers } = await downloadUrl(parsed, {
+          maxBytes: 100 * 1024 * 1024,
+          idleTimeoutMs: client.timeoutMs,
+          blockPrivate: config.transport === "http",
+        });
 
-        const contentDisposition = fileRes.headers.get("content-disposition");
+        const contentDisposition = headers["content-disposition"];
         let filename = url.split("/").pop()?.split("?")[0] || "document";
         if (contentDisposition) {
           const match = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
           if (match) filename = match[1].replace(/['"]/g, "");
         }
 
-        const blob = await fileRes.blob();
+        const blob = new Blob([data], { type: headers["content-type"] || "" });
         const form = new FormData();
         form.append("document", blob, filename);
         if (title !== undefined) form.append("title", title);

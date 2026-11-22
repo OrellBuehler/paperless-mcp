@@ -712,7 +712,7 @@
                 <li><code>download_document</code></li>
                 <li><code>update_document</code></li>
                 <li><code>delete_document</code></li>
-                <li><code>upload_document</code></li>
+                <li><code>upload_document</code><span class="tag">stdio</span></li>
                 <li><code>get_document_metadata</code></li>
                 <li><code>get_document_suggestions</code></li>
                 <li><code>get_document_notes</code></li>
@@ -729,7 +729,7 @@
               <ul>
                 <li><code>bulk_edit_documents</code></li>
                 <li><code>bulk_set_object_permissions</code></li>
-                <li><code>bulk_download_documents</code></li>
+                <li><code>bulk_download_documents</code><span class="tag">stdio</span></li>
                 <li><code>get_next_asn</code></li>
                 <li><code>get_selection_data</code></li>
                 <li><code>test_storage_path</code></li>
@@ -777,7 +777,7 @@
                 <li><code>get_documents_by_correspondent</code></li>
                 <li><code>monthly_summary</code></li>
                 <li><code>yearly_document_check</code></li>
-                <li><code>extract_document_pages</code></li>
+                <li><code>extract_document_pages</code><span class="tag">stdio</span></li>
                 <li><code>find_document_pages</code></li>
                 <li><code>get_document_ai_suggestions</code><span class="tag">3.0+</span></li>
               </ul>
@@ -793,7 +793,10 @@
             <details>
               <summary>Versions and PDF editing <span class="count">10</span></summary>
               <ul>
-                <li><code>upload_document_version</code><span class="tag">3.0+</span></li>
+                <li>
+                  <code>upload_document_version</code><span class="tag">3.0+</span
+                  ><span class="tag">stdio</span>
+                </li>
                 <li><code>set_document_version_label</code><span class="tag">3.0+</span></li>
                 <li><code>delete_document_version</code><span class="tag">3.0+</span></li>
                 <li><code>get_document_root</code><span class="tag">3.0+</span></li>
@@ -949,6 +952,7 @@
                 <li>Prebuilt Docker image on GHCR</li>
                 <li>Optional OAuth sign-in via your Paperless OIDC provider</li>
                 <li>Shared semantic index, filtered per user</li>
+                <li>Hardened for sharing: no local file tools, no private-network fetches</li>
               </ul>
               <pre><code>paperless-mcp:
   image: ghcr.io/orellbuehler/paperless-mcp:latest
